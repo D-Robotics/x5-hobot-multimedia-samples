@@ -58,5 +58,5 @@ subdir += main
 ifeq ($(MODULE_VPP), y)
 	PLATFORM_LIBS_NAME := cam vpf hbmem multimedia avformat avcodec avutil swresample ffmedia gdcbin cjson alog dnn cnn_intf hbrt_bayes_aarch64 ssl crypto drm z dl rt pthread
 	PLATFORM_LIBS += $(patsubst %,-l%,$(PLATFORM_LIBS_NAME))
-	LDFLAGS_EX += -L/usr/hobot
+	LDFLAGS_EX += -L/usr/hobot/lib
 endif

@@ -2,8 +2,6 @@
 
 set -e
 
-. /etc/profile.d/environment.sh
-
 local_path=$(dirname "$(readlink -f "$0")")
 
 # 配置cpu bpu ddr 降频的结温温度
@@ -15,8 +13,7 @@ echo performance > /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
 
 # Start web server
 echo "============= Start Web Server ==============="
-cd "${local_path}"/WebServer || exit 1
-./start_lighttpd.sh || true
+python -m http.server 80 -d "${local_path}"/WebServer/sc_lighttpd/webpages &
 
 cd "${local_path}"/sunrise_camera/bin || exit 1
 echo "============= Start Sunrise Camera ==============="

@@ -1,0 +1,44 @@
+{
+    "inputRes": [
+        1920,
+        1080
+    ],
+    "param": {
+        "fov": 180,
+        "diameter": 1080,
+        "offsetX": 0,
+        "offsetY": 0
+    },
+    "outputRes": [
+        1920,
+        1080
+    ],
+    "transformations": [
+        {
+            "transformation": "Custom",
+            "position": [
+                0,
+                0,
+                1920,
+                1080
+            ],
+            "ptz": [
+                0,
+                0,
+                1
+            ],
+            "roi": {
+                "x": 0,
+                "y": 0,
+                "w": 1920,
+                "h": 1080
+            },
+            "param": {
+                "customTransformation": "../1-custom_config/custom_config.txt"
+            }
+        }
+    ],
+    "mode": "semiplanar420",
+    "eccMode": "eccDisabled",
+    "colourspace": "yuv"
+}

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>智能分析盒方案说明</title>
+	<style>
+		body {
+			font-family: Arial, sans-serif;
+			line-height: 1.6;
+		}
+
+		h1,
+		h2,
+		h3 {
+			color: #2196F3;
+		}
+
+		.section {
+			margin-bottom: 20px;
+		}
+	</style>
+</head>
+
+<body>
+	<div class="section">
+		<h1>智能分析盒方案说明</h1>
+		<p>智能分析盒方案提供了以下功能：</p>
+		<ul>
+			<li>解码码流后运行算法并重新编码推流</li>
+				<ul>
+					<li>支持读取开发板上的本地视频码流文件</li>
+					<li>支持使用RTSP码流</li>
+					<li>支持对解码的视频文件进行缩放后再编码</li>
+					<li>支持控制码率和帧率</li>
+				</ul>
+			<li>运行指定的算法</li>
+			<!-- 可根据实际情况添加更多功能说明 -->
+		</ul>
+	</div>
+
+	<div class="section">
+		<h2>参数说明</h2>
+		<p>智能分析盒方案具有以下可调参数：</p>
+		<ul>
+			<li>视频通道数：选择启用多少路视频分析通道</li>
+				<ul>
+					<li>启用的通道数的能力解码和编码合计不能超过 4K@60fps （硬件限制）</li>
+					<li>设备默认分配给编解码、算法的ION内存为1GB，如果启用路数过多，有可能会出现内存不足的问题，需要调大ION</li>
+				</ul>
+			<li>视频数据流（stream）：支持读取开发板上的本地视频码流文件和RTSP码流</li>
+			<li>解码类型（decode_type）：控制视频解码格式，支持H264\H265\Mjpeg</li>
+			<li>解码宽度（decode_width）：控制视频解码的宽度</li>
+			<li>解码高度（decode_height）：控制视频解码的高度</li>
+			<li>解码帧率（decode_frame_rate）：控制视频解码的帧率</li>
+			<li>编码类型（encode_type）：控制视频编码格式，支持H264\H265\Mjpeg</li>
+			<li>编码宽度（encode_width）：控制视频编码的宽度</li>
+			<li>编码高度（encode_height）：控制视频编码的高度</li>
+			<li>编码帧率（encode_frame_rate）：控制视频编码的帧率</li>
+			<li>编码码率（encode_bitrate）：控制视频编码的码率，以下是不同分辨率视频的参考码率</li>
+				<ul>
+					<li>标清视频（480p）: 256, 512, 768, 1024, 1536, 2048</li>
+					<li>高清视频（720p）: 512, 1024, 2048, 3072, 4096, 6144</li>
+					<li>全高清视频（1080p）: 1024, 2048, 4096, 6144, 8192, 12288</li>
+					<li>2K视频: 2048, 4096, 8192, 12288, 16384, 24576</li>
+					<li>4K视频: 4096, 8192, 16384, 24576, 32768, 49152</li>
+				</ul>
+			<li>算法模型（model）：选择运行算法模型</li>
+			<!-- 可根据实际情况添加更多参数说明 -->
+		</ul>
+	</div>
+
+	<div class="section">
+		<h2>注意事项</h2>
+		<p>在使用智能分析盒方案时，请注意以下事项：</p>
+		<ul>
+			<li>确保网络连接稳定，网络带宽满足数据传输量的要求</li>
+			<li>根据需要调整分析通道数和分析算法以满足应用需求</li>
+			<li>启用的通道数的能力解码和编码合计不能超过 4K@60fps （硬件限制）</li>
+			<li>设备默认分配给编解码、算法的ION内存为1GB，如果启用路数过多，有可能会出现内存不足的问题，需要调大ION</li>
+			<!-- 可根据实际情况添加更多注意事项 -->
+		</ul>
+	</div>
+</body>
+
+</html>

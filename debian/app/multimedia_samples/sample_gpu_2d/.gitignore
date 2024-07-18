@@ -1,0 +1,11 @@
+*.o
+*.so
+*.a
+*.d
+*.patch
+*.vscode
+
+sample_alphablend/alphablend
+sample_rectangle_fill/rectangle_fill
+sample_rotation/rotation
+sample_format_convert/format_convert

@@ -1,0 +1,12 @@
+*o
+*.so
+*.a
+*.patch
+*.vscode
+*.d
+sunrise_camera
+install
+*.log
+*.obj
+*.dep
+out

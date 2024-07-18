@@ -1,0 +1,5 @@
+#!/bin/bash
+
+chown -R :video /app/multimedia_samples
+
+exit 0

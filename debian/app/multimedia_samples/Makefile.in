@@ -1,0 +1,69 @@
+ifneq ($(wildcard /opt/gcc-arm-11.2-2022.02-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-gcc),)
+	CROSS_COMPILE ?= /opt/gcc-arm-11.2-2022.02-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-
+else
+	CROSS_COMPILE ?= aarch64-linux-gnu-
+endif
+
+ifeq ($(BUILD_VERBOSE),1)
+	Q =
+else
+	Q = @
+endif
+
+CC = ${CROSS_COMPILE}gcc
+CXX = ${CROSS_COMPILE}g++
+AR = ${CROSS_COMPILE}ar
+AS = ${CROSS_COMPILE}as
+LD = ${CROSS_COMPILE}ld
+
+STRIP = ${CROSS_COMPILE}strip
+RANLIB = ${CROSS_COMPILE}ranlib
+OBJCOPY = ${CROSS_COMPILE}objcopy
+OBJDUMP = ${CROSS_COMPILE}objdump
+READELF = ${CROSS_COMPILE}readelf
+NM = ${CROSS_COMPILE}nm
+
+CFLAGS = -Wall -Werror
+CXXFLAGS = -Wall -Werror
+CFLAGS_DYNAMIC = -fPIC -shared
+CFLAGS_STATIC = -rcs
+LDFLAGS =
+
+# Get the absolute path of the directory where Makefile.in is located
+PLATFORM_SAMPLES_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
+
+HR_TOP_DIR = /usr/hobot
+ifeq ($(HR_BUILD_OUTPUT_DIR),)
+HR_BUILD_OUTPUT_DIR = ${HR_TOP_DIR}
+endif
+
+ifeq ($(APP_DEPLOY_DIR),)
+APP_DEPLOY_DIR = /app/
+endif
+
+PLATFORM_SAMPLES_DEPLOY_DIR = ${APP_DEPLOY_DIR}/platform_samples
+
+INCS += -I . \
+	-I ${HR_BUILD_OUTPUT_DIR}/include/ \
+	-I ${PLATFORM_SAMPLES_DIR}/include/ \
+	-I ${PLATFORM_SAMPLES_DIR}/utils/ \
+	-I ${PLATFORM_SAMPLES_DIR}/vp_sensors
+
+LIBSDIR = 	-L ${HR_BUILD_OUTPUT_DIR}/lib \
+		-L ${PLATFORM_SAMPLES_DIR}/lib
+
+LIBS = 	-lcam \
+	-lvpf \
+	-lhbmem \
+	-lgdcbin \
+	-lcjson \
+	-lpthread \
+	-lalog \
+	-ldl
+
+$(info PLATFORM_SAMPLES_DIR directory (absolute): $(PLATFORM_SAMPLES_DIR))
+
+SRC_PATH = $(shell pwd)
+SRC_PATH += ${PLATFORM_SAMPLES_DIR}/utils
+SRC_PATH += $(shell find ${PLATFORM_SAMPLES_DIR}/vp_sensors -maxdepth 1 -type d)
+

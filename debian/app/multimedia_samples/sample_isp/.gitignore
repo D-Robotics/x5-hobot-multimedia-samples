@@ -1,0 +1,10 @@
+*.o
+*.so
+*.a
+*.d
+*.patch
+*.vscode
+
+get_isp_data/get_isp_data
+multi_isp_vflow/multi_isp_vflow
+

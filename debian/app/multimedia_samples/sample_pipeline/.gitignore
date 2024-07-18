@@ -1,0 +1,12 @@
+*.o
+*.so
+*.a
+*.d
+*.patch
+*.vscode
+
+single_pipe_vin_isp_vse/single_pipe_vin_isp_vse
+multi_pipe_vin_isp_vse/multi_pipe_vin_isp_vse
+single_pipe_vin_isp_vse_vpu/single_pipe_vin_isp_vse_vpu
+single_pipe_vin_isp_gdc/single_pipe_vin_isp_gdc
+

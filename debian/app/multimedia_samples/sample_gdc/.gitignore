@@ -1,0 +1,11 @@
+*.o
+*.so
+*.a
+*.d
+*.patch
+*.vscode
+
+1-custom_config/chessboard/*.jpg
+1-custom_config/chessboard/*.png
+2-generate_bin/generate_bin
+3-gdc_static_valid/gdc_static_valid

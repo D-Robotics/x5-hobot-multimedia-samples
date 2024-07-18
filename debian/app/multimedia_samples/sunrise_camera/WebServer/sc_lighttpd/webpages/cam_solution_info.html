@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>智能摄像机方案说明</title>
+	<style>
+		body {
+			font-family: Arial, sans-serif;
+			line-height: 1.6;
+		}
+
+		h1,
+		h2,
+		h3 {
+			color: #2196F3;
+		}
+
+		.section {
+			margin-bottom: 20px;
+		}
+	</style>
+</head>
+
+<body>
+	<div class="section">
+		<h1>智能摄像机方案说明</h1>
+		<p>智能摄像机方案提供了以下功能：</p>
+		<ul>
+			<li>实时视频监控</li>
+			<li>运行指定的算法</li>
+			<li>当有多颗Camera Sensor 接入时，支持开启多路视频预览</li>
+			<!-- 可根据实际情况添加更多功能说明 -->
+		</ul>
+	</div>
+
+	<div class="section">
+		<h2>参数说明</h2>
+		<p>智能摄像机方案具有以下可调参数：</p>
+		<ul>
+			<li>视频通路数：选择启用多少路摄像机，不能超过接入的Camera Sensor数量</li>
+			<li>Sensor型号：会探测接入到设备上的可以使用的Camera Sensor型号，根据需要进行配置</li>
+				<ul>
+					<li>同名但是帧率不同的Sensor，需要注意是否是同一颗Sensor，不可以同时打开，例如探测到 sc230ai-10fps 和 sc230ai-30fps, 则只能二选一</li>
+				</ul>
+			<li>编码类型：控制视频编码格式，支持H264\H265\Mjpeg, 根据硬件能力、软件支持情况会有所不同</li>
+			<li>编码码率：控制视频编码的码率，以下是不同分辨率视频的参考码率</li>
+				<ul>
+					<li>标清视频（480p）: 256, 512, 768, 1024, 1536, 2048</li>
+					<li>高清视频（720p）: 512, 1024, 2048, 3072, 4096, 6144</li>
+					<li>全高清视频（1080p）: 1024, 2048, 4096, 6144, 8192, 12288</li>
+					<li>2K视频: 2048, 4096, 8192, 12288, 16384, 24576</li>
+					<li>4K视频: 4096, 8192, 16384, 24576, 32768, 49152</li>
+				</ul>
+			<li>算法模型：选择运行算法模型</li>
+			<!-- 可根据实际情况添加更多参数说明 -->
+		</ul>
+	</div>
+
+	<div class="section">
+		<h2>注意事项</h2>
+		<p>在使用智能摄像机方案时，请注意以下事项：</p>
+		<ul>
+			<li>确保Camera Sensor与开发板连接稳定</li>
+			<li>根据需要调整编码码率以平衡视频质量和网络带宽</li>
+			<li>避免同时打开同名但帧率不同的Sensor</li>
+			<!-- 可根据实际情况添加更多注意事项 -->
+		</ul>
+	</div>
+</body>
+
+</html>

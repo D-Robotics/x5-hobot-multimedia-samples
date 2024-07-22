@@ -54,6 +54,7 @@ done
 
 while pgrep -x stressapptest >/dev/null; do
 	sleep 1
+	hrut_somstatus
 done
 pkill -f tc_hbdk3
 pkill -f run-portion.sh

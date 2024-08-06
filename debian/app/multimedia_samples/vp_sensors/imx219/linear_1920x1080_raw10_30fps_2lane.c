@@ -61,7 +61,7 @@ static vin_ichn_attr_t imx219_vin_ichn_attr = {
 };
 
 static vin_ochn_attr_t imx219_vin_ochn_attr = {
-	.ddr_en = 0,
+	.ddr_en = 1,
 	.ochn_attr_type = VIN_BASIC_ATTR,
 	.vin_basic_attr = {
 		.format = RAW10,
@@ -96,8 +96,8 @@ static isp_ochn_attr_t imx219_isp_ochn_attr = {
 };
 
 vp_sensor_config_t imx219_linear_1920x1080_raw10_30fps_2lane = {
-	.chip_id_reg = 0x4001,
-	.chip_id = 0x03,
+	.chip_id_reg = 0x0000,
+	.chip_id = 0x0219,
 	.sensor_i2c_addr_list = {0x10},
 	.sensor_name = "imx219-30fps",
 	.config_file = "linear_1920x1080_raw10_30fps_2lane.c",

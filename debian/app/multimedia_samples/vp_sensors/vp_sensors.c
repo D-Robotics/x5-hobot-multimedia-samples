@@ -511,25 +511,27 @@ int get_board_id(char *data, size_t size)
 	return 0;
 }
 
-static bool should_skip_sci1(void)
+static void should_used_csi(int *is_need_used_csi)
 {
 	char board_id[16];
-	bool is_need_skip_sci1 = true; // Default to skip if get_board_id fails
 	int ret = get_board_id(board_id, sizeof(board_id));
 
 	if (ret == 0) {
 		if (strncmp(board_id, "201", 3) == 0) {
-			printf("[INFO] board_id is %s, so skip sci1 test.\n", board_id);
-		} else {
-			printf("[INFO] board_id is %s, not need skip sci1.\n", board_id);
-			is_need_skip_sci1 = false;
+			printf("[INFO] board_id is %s, so skip csi test for index 1\n", board_id);
+			is_need_used_csi[1] = false;// board 201 not use csi1
+		}
+
+		if (strncmp(board_id, "301", 3) == 0) {
+			printf("[INFO] board_id is %s, so skip csi test for index 1 and index 3\n", board_id);
+			is_need_used_csi[1] = false;// board 301 not use csi1 csi3
+			is_need_used_csi[3] = false;
 		}
 	} else {
-		printf("read board_id file failed, so skip sci1.\n");
+		printf("read board_id file failed, so skip csi.\n");
 	}
-
-	return is_need_skip_sci1;
 }
+
 static int32_t vp_sensor_mipi_host_mclk_is_not_configed(int csi_index){
 	int mclk_is_not_configed = 0;
 	struct mipi_properties mipi_property;
@@ -551,13 +553,14 @@ void vp_sensor_detect_structed(csi_list_info_t *csi_list_info)
 	struct mipi_properties mipi_props_array[VP_MAX_VCON_NUM];
 	csi_list_info->valid_count = 0;
 	csi_list_info->max_count = VP_MAX_VCON_NUM;
-	bool is_need_skip_sci1 = should_skip_sci1();
+	int is_need_used_csi[VP_MAX_VCON_NUM] = {true, true, true, true};
+	should_used_csi(is_need_used_csi);
 	// Iterate over vcon@0 - 3
 	for (int i = 0; i < VP_MAX_VCON_NUM; ++i) {
 		csi_info_t csi_info_tmp = {.index = i, .is_valid = 0};
 		read_vcon_info_from_device_tree(i, &vcon_props_array[i]);
 		read_mipi_info_from_device_tree(i, &mipi_props_array[i]);
-		if ((i == 1) && (is_need_skip_sci1)) {
+		if (is_need_used_csi[i] == false) {
 			csi_list_info->csi_info[i] = csi_info_tmp;
 			continue;
 		}
@@ -626,13 +629,14 @@ int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int u
 	int32_t ret = -1, j = 0;
 	static int32_t i = 0;
 	uint32_t frequency = 24000000;
-	bool is_need_skip_sci1 = should_skip_sci1();
+	int is_need_used_csi[VP_MAX_VCON_NUM] = {true, true, true, true};
+	should_used_csi(is_need_used_csi);
 
 	struct vcon_properties vcon_props_array[VP_MAX_VCON_NUM];
 
 	// Iterate over vcon@0 - 3
 	for (i = 0; i < VP_MAX_VCON_NUM; ++i) {
-		if ((i == 1) && (is_need_skip_sci1)) {
+		if (is_need_used_csi[i] == false) {
 			continue;
 		}
 		// 跳过使用使用的mipi csi控制器，支持同时接入相同的摄像头
@@ -691,13 +695,14 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config, vp_csi_conf
 {
 	int32_t ret = 0, i = 0, j = 0;
 	uint32_t frequency = 24000000;
-	bool is_need_skip_sci1 = should_skip_sci1();
+	int is_need_used_csi[VP_MAX_VCON_NUM] = {true, true, true, true};
+	should_used_csi(is_need_used_csi);
 
 	struct vcon_properties vcon_props_array[VP_MAX_VCON_NUM];
 
 	// Iterate over vcon@0 - 3
 	for (i = 0; i < VP_MAX_VCON_NUM; ++i) {
-		if ((i == 1) && (is_need_skip_sci1)) {
+		if (is_need_used_csi[i] == false) {
 			continue;
 		}
 		if (check_mipi_host_status(i) == 0)

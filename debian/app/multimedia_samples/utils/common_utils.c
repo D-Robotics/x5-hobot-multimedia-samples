@@ -132,7 +132,7 @@ int32_t alloc_graphic_buffer(hbn_vnode_image_t *img, uint32_t width, uint32_t he
 	// vpm_hb_mem_init();
 
 	alloc_flags = HB_MEM_USAGE_MAP_INITIALIZED | HB_MEM_USAGE_PRIV_HEAP_2_RESERVERD | HB_MEM_USAGE_CPU_READ_OFTEN |
-		      HB_MEM_USAGE_CPU_WRITE_OFTEN;
+			  HB_MEM_USAGE_CPU_WRITE_OFTEN;
 
 	memset(img, 0, sizeof(hbn_vnode_image_t));
 	if (cached == 1)
@@ -165,6 +165,70 @@ int32_t alloc_graphic_buffer(hbn_vnode_image_t *img, uint32_t width, uint32_t he
 	}
 
 	return ret;
+}
+int read_nv12_image_to_common_buffer(const char *file_path, hb_mem_common_buf_t *src_buf, int width, int height)
+{
+    FILE *file = fopen(file_path, "rb");
+    if (!file)
+    {
+        fprintf(stderr, "Failed to open file: %s\n", file_path);
+        return -1;
+    }
+
+    size_t read_size = fread(src_buf->virt_addr, 1, width * height * 1.5, file);
+    fclose(file);
+
+    if (read_size != width * height * 1.5)
+    {
+        fprintf(stderr, "Failed to read the entire NV12 image from file: %s\n", file_path);
+        return -1;
+    }
+
+    return 0;
+}
+
+
+
+int read_nv12_image_to_graphic_buffer(const char *file_path, hb_mem_graphic_buf_t *src_buf, int width, int height)
+{
+    FILE *file = fopen(file_path, "rb");
+    if (!file)
+    {
+        fprintf(stderr, "Failed to open file: %s\n", file_path);
+        return -1;
+    }
+
+    size_t read_size = fread(src_buf->virt_addr[0], 1, width * height * 1.5, file);
+    fclose(file);
+
+    if (read_size != width * height * 1.5)
+    {
+        fprintf(stderr, "Failed to read the entire NV12 image from file: %s\n", file_path);
+        return -1;
+    }
+
+    return 0;
+}
+
+int read_nv12_image_to_normal_memory(const char *file_path, uint8_t*virt_addr, int width, int height)
+{
+    FILE *file = fopen(file_path, "rb");
+    if (!file)
+    {
+        fprintf(stderr, "Failed to open file: %s\n", file_path);
+        return -1;
+    }
+
+    size_t read_size = fread(virt_addr, 1, width * height * 1.5, file);
+    fclose(file);
+
+    if (read_size != width * height * 1.5)
+    {
+        fprintf(stderr, "Failed to read the entire NV12 image from file: %s\n", file_path);
+        return -1;
+    }
+
+    return 0;
 }
 
 int32_t read_yuvv_nv12_file(const char *filename, char *addr0, char *addr1, uint32_t y_size)
@@ -237,12 +301,12 @@ char* get_program_name()
 
 // VSE通道最大分辨率限制
 const int VSE_MAX_RESOLUTIONS[VSE_MAX_CHANNELS][2] = {
-    {4096, 3076}, // 4K Downscale
-    {1920, 1080}, // 1080P0 Downscale
-    {1920, 1080}, // 1080P1 Downscale
-    {1280,  720}, // 720P0 Downscale
-    {1280,  720}, // 720P1 Downscale
-    {4096, 3076}  // 4K Upscale
+	{4096, 3076}, // 4K Downscale
+	{1920, 1080}, // 1080P0 Downscale
+	{1920, 1080}, // 1080P1 Downscale
+	{1280,  720}, // 720P0 Downscale
+	{1280,  720}, // 720P1 Downscale
+	{4096, 3076}  // 4K Upscale
 };
 
 // 配置最大分辨率的函数

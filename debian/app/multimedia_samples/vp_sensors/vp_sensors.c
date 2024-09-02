@@ -29,6 +29,8 @@ extern vp_sensor_config_t irs2381c_linear_224x1903_raw12_5fps_2lane;
 extern vp_sensor_config_t imx219_linear_1920x1080_raw10_30fps_2lane;
 extern vp_sensor_config_t ov5647_linear_1920x1080_raw10_30fps_2lane;
 extern vp_sensor_config_t imx477_linear_1920x1080_raw12_50fps_2lane;
+extern vp_sensor_config_t sc035hgs_linear_640x480_raw10_30fps_2lane_vc0;
+extern vp_sensor_config_t sc035hgs_linear_640x480_raw10_30fps_2lane_vc1;
 
 vp_sensor_config_t *vp_sensor_config_list[] = {
 	&sc1330t_linear_1280x960_raw10_30fps_1lane,
@@ -45,6 +47,8 @@ vp_sensor_config_t *vp_sensor_config_list[] = {
 	&imx219_linear_1920x1080_raw10_30fps_2lane,
 	&ov5647_linear_1920x1080_raw10_30fps_2lane,
 	&imx477_linear_1920x1080_raw12_50fps_2lane,
+	&sc035hgs_linear_640x480_raw10_30fps_2lane_vc0,
+	&sc035hgs_linear_640x480_raw10_30fps_2lane_vc1,
 };
 
 uint32_t vp_get_sensors_list_number() {
@@ -166,6 +170,13 @@ static int enable_sensor_pin(int gpio_number, int active)
 	}
 
 	/* gpio level should be keep same with sensor driver power_on api */
+	// Set GPIO value to active
+	if (gpio_set_value(gpio_number, active) != 0) {
+		printf("Failed to set GPIO value\n");
+		return -1;
+	}
+
+	usleep(30 * 1000);
 
 	// Set GPIO value to 1 - active
 	if (gpio_set_value(gpio_number,  (1 - active)) != 0) {

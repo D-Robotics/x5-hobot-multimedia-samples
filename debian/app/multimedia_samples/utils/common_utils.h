@@ -12,6 +12,7 @@
 #include "vp_sensors.h"
 #include "vse_cfg.h"
 #include "codec_cfg.h"
+#include "hb_media_codec.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,6 +33,12 @@ extern "C" {
 	} while(0)\
 
 #define VSE_MAX_CHANNELS 6
+typedef struct camera_config_info_s{
+	int width;
+	int height;
+	int fps;
+	media_codec_id_t encode_type;
+}camera_config_info_t;
 
 typedef struct pipe_contex_s {
 	hbn_vflow_handle_t vflow_fd;
@@ -44,6 +51,7 @@ typedef struct pipe_contex_s {
 	camera_handle_t cam_fd;
 	vp_sensor_config_t *sensor_config;
 	vp_csi_config_t csi_config;
+	hb_mem_common_buf_t bin_buf;
 } pipe_contex_t;
 
 int32_t read_yuv420_file(const char *filename, char *addr0, char *addr1, uint32_t y_size);
@@ -61,6 +69,9 @@ char* get_program_name();
 void configure_vse_max_resolution(int32_t channel, uint32_t input_width, uint32_t input_height,
 	uint32_t *output_width, uint32_t *output_height);
 
+int read_nv12_image_to_graphic_buffer(const char *file_path, hb_mem_graphic_buf_t *src_buf, int width, int height);
+int read_nv12_image_to_common_buffer(const char *file_path, hb_mem_common_buf_t *src_buf, int width, int height);
+int read_nv12_image_to_normal_memory(const char *file_path, uint8_t*virt_addr, int width, int height);
 #ifdef __cplusplus
 	}
 #endif	/* __cplusplus */

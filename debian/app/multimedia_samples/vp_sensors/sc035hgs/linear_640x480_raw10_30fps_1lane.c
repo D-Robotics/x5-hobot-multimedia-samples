@@ -19,14 +19,14 @@ static mipi_config_t sc035hgs_mipi_config = {
 		.linelenth = 1600,
 		.framelenth = 1250,
 		.settle = 20,
-		.channel_num = 1,
+		.channel_num = 1, // ipi channel
 		.channel_sel = {0},
 	},
 };
 
 static camera_config_t sc035hgs_camera_config = {
 	.name = "sc035hgs",
-	.addr = 0x30,
+	.addr = 0x30, // 0x31
 	.sensor_mode = 1,
 	.fps = SENSOE_FPS,
 	.format = RAW10,
@@ -53,7 +53,7 @@ static vin_node_attr_t sc035hgs_vin_node_attr = {
 
 	},
 	.lpwm_attr = {
-		.enable = 1,
+		.enable = 0,
 		.lpwm_chn_attr = {
 			{	.trigger_source = 0,
 				.trigger_mode = 0,

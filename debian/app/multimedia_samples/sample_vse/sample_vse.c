@@ -262,8 +262,8 @@ int create_and_run_vflow(scaler_info_s *scaler_info, hbn_vnode_image_t *input_im
 	vse_ochn_attr[4].target_h = 672;
 
 	// 放大到支持的最大分辨率
-	vse_ochn_attr[5].target_w = (input_width * 4) > 4096 ? 4096 : (input_width * 4);
-	vse_ochn_attr[5].target_h = (input_height * 4) > 3076 ? 3076 : (input_height * 4);
+	vse_ochn_attr[5].target_w = (input_width * 2) > 4096 ? 4096 : (input_width * 2);
+	vse_ochn_attr[5].target_h = (input_height * 2) > 3076 ? 3076 : (input_height * 2);
 
 	ret = hbn_vnode_open(HB_VSE, hw_id, AUTO_ALLOC_ID, &vnode_fd);
 	ERR_CON_EQ(ret, 0);

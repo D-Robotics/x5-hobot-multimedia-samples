@@ -289,9 +289,9 @@ static int create_vse_node(pipe_contex_t *pipe_contex) {
 	vse_ochn_attr[4].target_w = 672;
 	vse_ochn_attr[4].target_h = 672;
 	vse_ochn_attr[5].target_w =
-		(input_width * 4) > 4096 ? 4096 : (input_width * 4);
+		(input_width * 2) > 4096 ? 4096 : (input_width * 2);
 	vse_ochn_attr[5].target_h =
-		(input_height * 4) > 3076 ? 3076 : (input_height * 4);
+		(input_height * 2) > 3076 ? 3076 : (input_height * 2);
 
 	ret = hbn_vnode_open(HB_VSE, hw_id, AUTO_ALLOC_ID, vse_node_handle);
 	ERR_CON_EQ(ret, 0);

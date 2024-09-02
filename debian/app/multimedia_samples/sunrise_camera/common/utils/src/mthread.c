@@ -257,4 +257,11 @@ void mThreadSetName(tsThread *psThreadInfo, const char *name)
 	}
 	printf("Thread %s start running\n", name);
 }
+void mThreadSetNameWidthIndex(tsThread *psThreadInfo, const char *name, int index){
+	char thread_name[100];
+
+	snprintf(thread_name, sizeof(thread_name), "%s_%d", name, index);
+	mThreadSetName(psThreadInfo, name);
+}
+
 

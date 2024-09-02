@@ -40,5 +40,6 @@ teThreadStatus mThreadStop(tsThread *psThreadInfo);
 teThreadStatus mThreadFinish(tsThread *psThreadInfo);
 teThreadStatus mThreadYield(void);
 void mThreadSetName(tsThread *psThreadInfo, const char *name);
+void mThreadSetNameWidthIndex(tsThread *psThreadInfo, const char *name, int index);
 
 #endif // MTHREAD_H_

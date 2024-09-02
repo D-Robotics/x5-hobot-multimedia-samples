@@ -4,6 +4,7 @@ include ./makefile.param
 INC_DIR := main api vpp_impl vp_wrap bpu_wrap
 INC_DIR += $(GLOBAL_EXTERN_INC_DIR) $(GLOBAL_INSTALL_DIR)
 INC := $(patsubst %,-I%/include,$(INC_DIR))
+INC += -I/usr/include/libdrm
 INC += $(patsubst %,-I%,vp_sensors)
 LIB := $(patsubst %,-L%/lib,$(INC_DIR))
 

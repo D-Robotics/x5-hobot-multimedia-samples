@@ -463,8 +463,8 @@ int32_t solution_cfg_load()
 			char *str_json = (char *)malloc(file_size + 1); // 动态分配内存
 			if (str_json != NULL)
 			{
-				size_t bytes_read = fread(str_json, 1, file_size, fd); // 读取文件内容到内存
-				str_json[bytes_read] = '\0'; // 添加字符串结束符
+				fread(str_json, 1, file_size, fd); // 读取文件内容到内存
+				str_json[file_size] = '\0'; // 添加字符串结束符
 				fclose(fd);
 
 				SC_LOGI("read config from config file: [%s]\n", str_json);

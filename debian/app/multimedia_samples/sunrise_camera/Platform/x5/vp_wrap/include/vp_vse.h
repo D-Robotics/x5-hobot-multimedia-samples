@@ -13,6 +13,11 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+typedef struct vp_vse_output_info_s{
+	int width;
+	int height;
+	int fps;
+}vp_vse_output_info_t;
 
 int32_t vp_vse_init(vp_vflow_contex_t *vp_vflow_contex);
 int32_t vp_vse_start(vp_vflow_contex_t *vp_vflow_contex);
@@ -26,6 +31,7 @@ int32_t vp_vse_get_frame(vp_vflow_contex_t *vp_vflow_contex,
 int32_t vp_vse_release_frame(vp_vflow_contex_t *vp_vflow_contex,
 	int32_t ochn_id, ImageFrame *frame);
 
+int32_t vp_vse_get_output_info(vp_vflow_contex_t *vp_vflow_contex, int32_t ochn_id, vp_vse_output_info_t *vse_out_info);
 #ifdef __cplusplus
 }
 #endif /* extern "C" */

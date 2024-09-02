@@ -178,6 +178,15 @@ teQueueStatus mQueueDequeueTimed(tsQueue *psQueue, uint32_t u32WaitTimeMil, void
 	pthread_mutex_unlock(&psQueue->mutex);
 	return E_QUEUE_OK;
 }
+int mQueueIsEmpty(tsQueue *psQueue){
+	pthread_mutex_lock(&psQueue->mutex);
+	if (psQueue->u32Rear == psQueue->u32Front) {
+		pthread_mutex_unlock(&psQueue->mutex);
+		return 1;
+	}
+	pthread_mutex_unlock(&psQueue->mutex);
+	return 0;
+}
 
 int mQueueIsFull(tsQueue *psQueue)
 {

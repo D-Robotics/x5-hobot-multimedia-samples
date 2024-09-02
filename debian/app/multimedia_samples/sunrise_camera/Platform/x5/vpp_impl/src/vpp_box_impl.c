@@ -350,7 +350,7 @@ int32_t vpp_box_init_param(void)
 			cfg_box_vpp->encode_width,
 			cfg_box_vpp->encode_height,
 			cfg_box_vpp->encode_frame_rate,
-			cfg_box_vpp->encode_bitrate);
+			cfg_box_vpp->encode_bitrate, false);
 		if (ret != 0) {
 			SC_LOGE("Encode config param error, type:%d width:%d height:%d"
 				" frame_rate: %d bit_rate:%d\n",

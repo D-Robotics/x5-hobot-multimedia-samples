@@ -368,7 +368,7 @@ static int32_t get_rc_params(media_codec_context_t *context,
 }
 
 int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t codec_type,
-	int32_t width, int32_t height, int32_t frame_rate, uint32_t bit_rate)
+	int32_t width, int32_t height, int32_t frame_rate, uint32_t bit_rate, bool external_frame_buf)
 {
 	mc_video_codec_enc_params_t *params;
 
@@ -381,7 +381,7 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 	params->bitstream_buf_size = (width * height * 3 / 2  + 0x3ff) & ~0x3ff;
 	SC_LOGD("params->bitstream_buf_size: %d", params->bitstream_buf_size);
 	params->frame_buf_count = 5;
-	params->external_frame_buf = false;
+	params->external_frame_buf = external_frame_buf;
 	params->bitstream_buf_count = 5;
 	/* Hardware limitations of x5 wave521cl:
 	 * - B-frame encoding is not supported.
@@ -646,12 +646,7 @@ int32_t vp_codec_set_input_single_file(media_codec_context_t *context, ImageFram
 		return -1;
 	}
 
-	ssize_t bytes_read = read(img_in_fd, buffer.vframe_buf.vir_ptr[0], buffer.vframe_buf.size);
-	if (bytes_read == -1) {
-		printf("read image failed !\n");
-		close(img_in_fd);
-		return -1;
-	}
+	read(img_in_fd, buffer.vframe_buf.vir_ptr[0], buffer.vframe_buf.size);
 	close(img_in_fd);
 #endif
 
@@ -694,6 +689,53 @@ int32_t vp_codec_set_input_single_file(media_codec_context_t *context, ImageFram
 	return ret;
 }
 
+int32_t vp_codec_encoder_set_input(media_codec_context_t *context, ImageFrame *vse_frame){
+
+	if ((context == NULL) || (vse_frame == NULL)
+		|| (vse_frame->hbn_vnode_image == NULL)){
+		SC_LOGE("codec param is NULL!\n");
+		return -1;
+	}
+	int32_t ret = 0;
+	media_codec_buffer_t buffer;
+	hbn_vnode_image_t *hbn_vnode_image = vse_frame->hbn_vnode_image;
+
+	ret = hb_mm_mc_dequeue_input_buffer(context, &buffer, 2000);
+	if (ret != 0){
+		SC_LOGE("hb_mm_mc_dequeue_input_buffer failed ret = %d", ret);
+		return -1;
+	}
+
+	int data_size = hbn_vnode_image->buffer.size[0];
+	if(hbn_vnode_image->buffer.plane_cnt == 2){
+		data_size += hbn_vnode_image->buffer.size[1];
+	}
+
+	buffer.type = MC_VIDEO_FRAME_BUFFER;
+	buffer.vframe_buf.width = context->video_enc_params.width;
+	buffer.vframe_buf.height = context->video_enc_params.height;
+	buffer.vframe_buf.pix_fmt = MC_PIXEL_FORMAT_NV12;
+	buffer.vframe_buf.size = data_size;
+	buffer.vframe_buf.pts = hbn_vnode_image->info.timestamps / 1000;;
+	if(context->video_enc_params.external_frame_buf){
+		buffer.vframe_buf.vir_ptr[0] = hbn_vnode_image->buffer.virt_addr[0];
+		buffer.vframe_buf.vir_ptr[1] = hbn_vnode_image->buffer.virt_addr[1];
+		buffer.vframe_buf.phy_ptr[0] = hbn_vnode_image->buffer.phys_addr[0];
+		buffer.vframe_buf.phy_ptr[1] = hbn_vnode_image->buffer.phys_addr[1];
+		buffer.user_ptr = vse_frame;
+	}else{
+		memcpy(buffer.vframe_buf.vir_ptr[0], hbn_vnode_image->buffer.virt_addr[0], data_size);
+	}
+	ret = hb_mm_mc_queue_input_buffer(context, &buffer, 2000);
+	if (ret != 0)
+	{
+		SC_LOGE("hb_mm_mc_queue_input_buffer failed, ret = 0x%x\n", ret);
+		return -1;
+	}
+	return 0;
+
+}
+
 int32_t vp_codec_set_input(media_codec_context_t *context, ImageFrame *frame, int32_t eos)
 {
 	int32_t ret = 0;
@@ -730,18 +772,23 @@ int32_t vp_codec_set_input(media_codec_context_t *context, ImageFrame *frame, in
 		// SC_LOGW("plane_count: %d", frame->plane_count);
 		// SC_LOGW("pts: %llu", buffer->vframe_buf.pts);
 
-		if (buffer->vframe_buf.size != 0) {
-			memcpy(buffer->vframe_buf.vir_ptr[0], frame->data[0], buffer->vframe_buf.size);
-		} else {
-			memcpy(buffer->vframe_buf.vir_ptr[0], frame->data[0], frame->data_size[0]);
-			// char file_name[128];
-			// hbn_vnode_image_t *hbn_vnode_image = (hbn_vnode_image_t *)frame->hbn_vnode_image;
-			// sprintf(file_name, "/tmp/codec_%ux%u_%03d.yuv",
-			// 					hbn_vnode_image->buffer.width,
-			// 					hbn_vnode_image->buffer.height,
-			// 					hbn_vnode_image->info.frame_id);
-			// vp_dump_yuv_to_file(file_name, frame->data[0], frame->data_size[0]);
+		if(context->video_enc_params.external_frame_buf){
+			buffer->vframe_buf.vir_ptr[0] = frame->data[0];
+		}else{
+			if (buffer->vframe_buf.size != 0) {
+				memcpy(buffer->vframe_buf.vir_ptr[0], frame->data[0], buffer->vframe_buf.size);
+			} else {
+				memcpy(buffer->vframe_buf.vir_ptr[0], frame->data[0], frame->data_size[0]);
+				// char file_name[128];
+				// hbn_vnode_image_t *hbn_vnode_image = (hbn_vnode_image_t *)frame->hbn_vnode_image;
+				// sprintf(file_name, "/tmp/codec_%ux%u_%03d.yuv",
+				// 					hbn_vnode_image->buffer.width,
+				// 					hbn_vnode_image->buffer.height,
+				// 					hbn_vnode_image->info.frame_id);
+				// vp_dump_yuv_to_file(file_name, frame->data[0], frame->data_size[0]);
+			}
 		}
+
 	}
 	else
 	{

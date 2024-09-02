@@ -111,3 +111,18 @@ int32_t vp_vse_release_frame(vp_vflow_contex_t *vp_vflow_contex,
 	ret = hbn_vnode_releaseframe(vse_node_handle, ochn_id, frame->hbn_vnode_image);
 	return ret;
 }
+
+int32_t vp_vse_get_output_info(vp_vflow_contex_t *vp_vflow_contex,
+	int32_t ochn_id, vp_vse_output_info_t *vse_out_info)
+{
+	int ret = 0;
+	vse_ochn_attr_t vse_ochn_attr = {0};
+	hbn_vnode_handle_t vse_node_handle = vp_vflow_contex->vse_node_handle;
+	ret = hbn_vnode_get_ochn_attr(vse_node_handle, ochn_id, &vse_ochn_attr);
+	if(ret == 0){
+		vse_out_info->fps = vse_ochn_attr.fps.dst;
+		vse_out_info->width = vse_ochn_attr.target_w;
+		vse_out_info->height = vse_ochn_attr.target_h;
+	}
+	return ret;
+}

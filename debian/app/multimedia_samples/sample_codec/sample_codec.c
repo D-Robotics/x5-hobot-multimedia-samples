@@ -62,9 +62,11 @@ static void print_help() {
 
 static void print_encode_params(EncodeParams *params) {
 	printf("Encode params...\n codec_type: %d, width: %d, height: %d, frame_rate: %d, "
-		"bit_rate: %u, input_file: %s, output_file: %s, frame_num: %d\n",
+			"bit_rate: %u, input_file: %s, output_file: %s, frame_num: %d, profile: %s, "
+			"external_buffer: %d performance_test:%d\n",
 			params->codec_type, params->width, params->height, params->frame_rate,
-			params->bit_rate, params->input, params->output, params->frame_num);
+			params->bit_rate, params->input, params->output, params->frame_num,
+			params->profile, params->external_buffer, params->performance_test);
 }
 
 static void print_decode_params(DecodeParams *params) {
@@ -92,11 +94,6 @@ int extract_jpeg(FILE *file, uint8_t **image_data, size_t *image_size) {
 	}
 
 	while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0 || !feof(file)) {
-		if (feof(file)) {
-			if (jpeg_data)
-				free(jpeg_data);
-			return -1;
-		}
 		for (size_t i = 0; i < bytes_read; i++) {
 			// Check for JPEG start marker
 			if (i < bytes_read - 1 && MAKEWORD(buffer[i], buffer[i + 1]) == JPEG_START_MARKER) {
@@ -121,8 +118,16 @@ int extract_jpeg(FILE *file, uint8_t **image_data, size_t *image_size) {
 			if (i > 0 && MAKEWORD(buffer[i - 1], buffer[i]) == JPEG_END_MARKER && in_jpeg) {
 				*image_data = jpeg_data;
 				*image_size = jpeg_size;
+
+				// Reset file position to start of the next JPEG
+				fseek(file, -(long)(bytes_read - i - 1), SEEK_CUR);
 				return 0;
 			}
+		}
+		if (feof(file)) {
+			if (jpeg_data)
+				free(jpeg_data);
+			return -1;
 		}
 	}
 
@@ -335,6 +340,152 @@ int32_t av_build_dec_seq_header(uint8_t *pbHeader,
 	return size;
 }
 
+static int32_t h264_parse_profile(const char *str_profile, H264Profile *h264_profile)
+{
+	char *s, *stringp, *profile, *level;
+	if (str_profile == NULL || h264_profile == NULL || strlen(str_profile) == 0)
+		return -EINVAL;
+
+	stringp = strdup(str_profile);
+	s = stringp;
+
+	if (!stringp)
+		return -EINVAL;
+
+	/*
+	 * format: profile@level%tier
+	 * example:
+	 *	h264_main@L4
+	 */
+	profile = strsep(&s, "@");
+	level = s;
+	if (!profile || ! level)
+		return -EINVAL;
+
+	if (strcmp(profile, "h264_main") == 0)
+		h264_profile->profile = MC_H264_PROFILE_MP;
+	else if (strcmp(profile, "h264_baseline") == 0)
+		h264_profile->profile = MC_H264_PROFILE_BP;
+	else if (strcmp(profile, "h264_high") == 0)
+		h264_profile->profile = MC_H264_PROFILE_HP;
+	else if (strcmp(profile, "h264_high10") == 0)
+		h264_profile->profile = MC_H264_PROFILE_HIGH10;
+	else if (strcmp(profile, "h264_high422") == 0)
+		h264_profile->profile = MC_H264_PROFILE_HIGH422;
+	else if (strcmp(profile, "h264_high444") == 0)
+		h264_profile->profile = MC_H264_PROFILE_HIGH444;
+	else if (strcmp(profile, "h264_extended") == 0)
+		h264_profile->profile = MC_H264_PROFILE_EXTENDED;
+	else
+		h264_profile->profile = MC_H264_PROFILE_UNSPECIFIED;
+
+	if (strcmp(level, "L1") == 0)
+		h264_profile->level = MC_H264_LEVEL1;
+	else if (strcmp(level, "L1B") == 0)
+		h264_profile->level = MC_H264_LEVEL1b;
+	else if (strcmp(level, "L1_1") == 0)
+		h264_profile->level = MC_H264_LEVEL1_1;
+	else if (strcmp(level, "L1_2") == 0)
+		h264_profile->level = MC_H264_LEVEL1_2;
+	else if (strcmp(level, "L1_3") == 0)
+		h264_profile->level = MC_H264_LEVEL1_3;
+	else if (strcmp(level, "L2") == 0)
+		h264_profile->level = MC_H264_LEVEL2;
+	else if (strcmp(level, "L2_1") == 0)
+		h264_profile->level = MC_H264_LEVEL2_1;
+	else if (strcmp(level, "L3") == 0)
+		h264_profile->level = MC_H264_LEVEL3;
+	else if (strcmp(level, "L3_1") == 0)
+		h264_profile->level = MC_H264_LEVEL3_1;
+	else if (strcmp(level, "L3_2") ==0 )
+		h264_profile->level = MC_H264_LEVEL3_2;
+	else if (strcmp(level, "L4") == 0)
+		h264_profile->level = MC_H264_LEVEL4;
+	else if (strcmp(level, "L4_1") == 0)
+		h264_profile->level = MC_H264_LEVEL4_1;
+	else if (strcmp(level, "L4_2") == 0)
+		h264_profile->level = MC_H264_LEVEL4_2;
+	else if (strcmp(level, "L5") == 0)
+		h264_profile->level = MC_H264_LEVEL5;
+	else if (strcmp(level, "L5_1") == 0)
+		h264_profile->level = MC_H264_LEVEL5_1;
+	else if (strcmp(level, "L5_2") == 0)
+		h264_profile->level = MC_H264_LEVEL5_2;
+	else
+		h264_profile->level = MC_H264_LEVEL_UNSPECIFIED;
+
+	free(stringp);
+
+	return 0;
+}
+
+static int32_t h265_parse_profile(const char *str_profile, H265Profile *h265_profile)
+{
+	char *s, *stringp, *profile, *level, *tier;
+	if (str_profile == NULL || h265_profile == NULL || strlen(str_profile) == 0)
+		return -EINVAL;
+
+	stringp = strdup(str_profile);
+	s = stringp;
+
+	if (!stringp)
+		return -EINVAL;
+
+	/*
+	 * format: profile@level%tier
+	 * example:
+	 *	h265_main@L4%high_tier
+	 */
+	profile = strsep(&s, "@");
+	level = strsep(&s, "%");
+	tier = s;
+
+	if (!profile || !level)
+		return -EINVAL;
+
+	if (strcmp(profile, "h265_main") == 0)
+		h265_profile->main_still_picture_profile_enable = 0;
+	else if (strcmp(profile, "h265_main_still") == 0)
+		h265_profile->main_still_picture_profile_enable = 1;
+	else
+		h265_profile->main_still_picture_profile_enable = 0;
+
+	if (strcmp(level, "L1") == 0)
+		h265_profile->level = MC_H265_LEVEL1;
+	else if (strcmp(level, "L2") == 0)
+		h265_profile->level = MC_H265_LEVEL2;
+	else if (strcmp(level, "L2_1") == 0)
+		h265_profile->level = MC_H265_LEVEL2_1;
+	else if (strcmp(level, "L3") == 0)
+		h265_profile->level = MC_H265_LEVEL3;
+	else if (strcmp(level, "L3_1") == 0)
+		h265_profile->level = MC_H265_LEVEL3_1;
+	else if (strcmp(level, "L4") == 0)
+		h265_profile->level = MC_H265_LEVEL4;
+	else if (strcmp(level, "L4_1") == 0)
+		h265_profile->level = MC_H265_LEVEL4_1;
+	else if (strcmp(level, "L5") == 0)
+		h265_profile->level = MC_H265_LEVEL5;
+	else if (strcmp(level, "L5_1") == 0)
+		h265_profile->level = MC_H265_LEVEL5_1;
+	else
+		h265_profile->level = MC_H265_LEVEL_UNSPECIFIED;
+
+	if (tier) {
+		if (strcmp(tier, "main_tier") == 0)
+			h265_profile->tier = 0;
+		else if (strcmp(tier, "high_tier") == 0)
+			h265_profile->tier = 1;
+		else
+			h265_profile->tier = 0;
+	}
+
+	free(stringp);
+
+	return 0;
+}
+
+
 static int32_t get_rc_params(media_codec_context_t *context,
 			mc_rate_control_params_t *rc_params) {
 	int32_t ret = 0;
@@ -455,9 +606,12 @@ static int32_t get_rc_params(media_codec_context_t *context,
 }
 
 int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t codec_type,
-	int32_t width, int32_t height, int32_t frame_rate, uint32_t bit_rate)
+	int32_t width, int32_t height, int32_t frame_rate, uint32_t bit_rate, const char *str_profile, bool external_buffer)
 {
 	mc_video_codec_enc_params_t *params;
+	H264Profile h264_profile = { 0, };
+	H265Profile h265_profile = { 0, };
+	int r;
 
 	memset(context, 0x00, sizeof(media_codec_context_t));
 	context->encoder = true;
@@ -467,7 +621,7 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 	params->pix_fmt = MC_PIXEL_FORMAT_NV12;
 	params->bitstream_buf_size = (width * height * 3 / 2  + 0x3ff) & ~0x3ff;
 	params->frame_buf_count = 3;
-	params->external_frame_buf = false;
+	params->external_frame_buf = external_buffer;
 	params->bitstream_buf_count = 3;
 	/* Hardware limitations of x5 wave521cl:
 	 * - B-frame encoding is not supported.
@@ -487,6 +641,12 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 		get_rc_params(context, &params->rc_params);
 		params->rc_params.h264_cbr_params.frame_rate = frame_rate;
 		params->rc_params.h264_cbr_params.bit_rate = bit_rate;
+
+		r = h264_parse_profile(str_profile, &h264_profile);
+		if (r == 0) {
+			params->h264_enc_config.h264_profile = h264_profile.profile;
+			params->h264_enc_config.h264_level = h264_profile.level;
+		}
 		break;
 	case MEDIA_CODEC_ID_H265:
 		context->codec_id = MEDIA_CODEC_ID_H265;
@@ -494,6 +654,13 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 		get_rc_params(context, &params->rc_params);
 		params->rc_params.h265_cbr_params.frame_rate = frame_rate;
 		params->rc_params.h265_cbr_params.bit_rate = bit_rate;
+
+		r = h265_parse_profile(str_profile, &h265_profile);
+		if (r == 0) {
+			params->h265_enc_config.main_still_picture_profile_enable = h265_profile.main_still_picture_profile_enable;
+			params->h265_enc_config.h265_level = h265_profile.level;
+			params->h265_enc_config.h265_tier = h265_profile.tier;
+		}
 		break;
 	case MEDIA_CODEC_ID_MJPEG:
 		context->codec_id = MEDIA_CODEC_ID_MJPEG;
@@ -597,6 +764,84 @@ static int32_t read_nv12_file(char *addr0, char *addr1, FILE *fd, uint32_t y_siz
 
 	return 0;
 }
+static void on_encode_input_buffer_consumed(hb_ptr userdata, media_codec_buffer_t *inputBuffer)
+{
+	hb_mem_graphic_buf_t *buffer;
+
+	if (!inputBuffer)
+		return;
+
+	printf("%s userdata(%p), inputBuffer->user_ptr(%p)\n", __func__,
+			userdata, inputBuffer->user_ptr);
+
+	if (inputBuffer->user_ptr) {
+		buffer = (hb_mem_graphic_buf_t *)inputBuffer->user_ptr;
+
+		hb_mem_free_buf(buffer->fd[0]);
+		free(buffer);
+	}
+}
+
+/* fill input buffer with external buffer */
+static int32_t read_input_frame(media_codec_buffer_t *input_buffer, FILE *fd)
+{
+	hb_mem_graphic_buf_t *buffer;
+	int64_t flags;
+	uint32_t y_size;
+	int32_t width, height;
+	uint8_t *y_data;
+	uint8_t *uv_data;
+	int32_t ret;
+
+	if (fd == NULL || input_buffer == NULL) {
+		printf("ERR(%s):null param.\n", __func__);
+		return -1;
+	}
+
+	width = input_buffer->vframe_buf.width;
+	height = input_buffer->vframe_buf.height;
+	y_size = input_buffer->vframe_buf.width * input_buffer->vframe_buf.height;
+
+	buffer = malloc(sizeof(hb_mem_graphic_buf_t));
+	memset(buffer, 0, sizeof(hb_mem_graphic_buf_t));
+
+	flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
+	ret = hb_mem_alloc_graph_buf(width, height, MEM_PIX_FMT_NV12, flags, 0, 0, buffer);
+	if (ret < 0) {
+		printf("hb_mem_alloc_graph_buf ret %d failed \n", ret);
+		return ret;
+	}
+
+	y_data = buffer->virt_addr[0];
+	uv_data = buffer->virt_addr[1];
+
+#if 0
+	printf("hb_mem alloc. y_data(%p), uv_data(%p), y_size(%d), size[0]: %lu, size[1]: %lu\n",
+			y_data, uv_data, y_size, buffer->size[0], buffer->size[1]);
+#endif
+
+	if (fread(y_data, 1, y_size, fd) != y_size) {
+		hb_mem_free_buf(buffer->fd[0]);
+		free(buffer);
+		return -1;
+	}
+
+	if (fread(uv_data, 1, y_size / 2, fd) != y_size / 2) {
+		hb_mem_free_buf(buffer->fd[0]);
+		free(buffer);
+		return -1;
+	}
+
+	input_buffer->vframe_buf.vir_ptr[0] = y_data;
+	input_buffer->vframe_buf.vir_ptr[1] = uv_data;
+	input_buffer->vframe_buf.phy_ptr[0] = buffer->phys_addr[0];
+	input_buffer->vframe_buf.phy_ptr[1] = buffer->phys_addr[1];
+
+	/* set external buffer ptr to user_ptr, using on_input_buffer_consumed to release it */
+	input_buffer->user_ptr = buffer;
+
+	return 0;
+}
 
 // 解析配置文件
 int parse_config(const char *filename,
@@ -668,6 +913,12 @@ int parse_config(const char *filename,
 				strcpy(params->output, trimmed_value);
 			else if (strcmp(trimmed_key, "frame_num") == 0)
 				params->frame_num = atoi(trimmed_value);
+			else if (strcmp(trimmed_key, "external_buffer") == 0)
+				params->external_buffer = atoi(trimmed_value);
+			else if (strcmp(trimmed_key, "performance_test") == 0)
+				params->performance_test = atoi(trimmed_value);
+			else if (strcmp(trimmed_key, "profile") == 0)
+				strcpy(params->profile, trimmed_value);
 		}
 		if (strcmp(section, "decode") == 0) {
 			if (strstr(line, "decode_streams") != NULL) {
@@ -786,13 +1037,14 @@ int32_t vp_codec_restart(media_codec_context_t *context)
 	return 0;
 }
 
-int32_t vp_codec_set_input(media_codec_context_t *context, media_codec_buffer_t *frame_buffer, uint8_t *data, uint32_t data_size, int32_t eos)
-// int32_t vp_codec_set_input(media_codec_context_t *context, ImageFrame *frame, int32_t eos)
+int32_t vp_codec_set_input(media_codec_context_t *context,
+	media_codec_buffer_t *frame_buffer, uint8_t *data,
+	uint32_t data_size, int32_t eos)
 {
 	int32_t ret = 0;
 	media_codec_buffer_t *buffer = NULL;
 
-	if ((context == NULL) || (frame_buffer == NULL) || (data == NULL))
+	if ((context == NULL) || (frame_buffer == NULL) || (!eos && (data == NULL)))
 	{
 		printf("codec param is NULL!\n");
 		return -1;
@@ -960,6 +1212,8 @@ int32_t encode_video(media_codec_context_t *context, EncodeParams *params) {
 	media_codec_buffer_t ouput_buffer = {0};
 	media_codec_output_buffer_info_t info;
 
+	printf("%s...\n", __func__);
+
 	ret = hb_mm_mc_initialize(context);
 	if (0 != ret)
 	{
@@ -1079,6 +1333,352 @@ venc_exit:
 	if (fp_input) {
 		fclose(fp_input);
 	}
+
+	ret = hb_mm_mc_pause(context);
+	if (ret != 0)
+	{
+		printf("Failed to hb_mm_mc_pause ret = %d \n", ret);
+		return -1;
+	}
+
+	ret = hb_mm_mc_release(context);
+	if (ret != 0)
+	{
+		printf("Failed to hb_mm_mc_release ret = %d \n", ret);
+		return -1;
+	}
+
+	return 0;
+}
+
+// 视频编码函数, external buffer and using callback to release external buffer
+int32_t encode_video_external_buffer(media_codec_context_t *context, EncodeParams *params) {
+	int32_t ret = 0;
+	int32_t frame_count = 0;
+	mc_av_codec_startup_params_t startup_params = {0};
+	media_codec_buffer_t input_buffer = {0};
+	media_codec_buffer_t ouput_buffer = {0};
+	media_codec_output_buffer_info_t info;
+	media_codec_callback_t callback;
+
+	printf("%s...\n", __func__);
+
+	ret = hb_mm_mc_initialize(context);
+	if (0 != ret)
+	{
+		printf("hb_mm_mc_initialize failed.\n");
+		return -1;
+	}
+
+	callback.on_input_buffer_consumed = on_encode_input_buffer_consumed;
+	ret = hb_mm_mc_set_input_buffer_listener(context, &callback, NULL);
+	if (0 != ret)
+	{
+		printf("hbmm_mc_set_input_buffer_listener failed.\n");
+		return -1;
+	}
+
+	ret = hb_mm_mc_configure(context);
+	if (0 != ret)
+	{
+		printf("hb_mm_mc_configure failed.\n");
+		hb_mm_mc_release(context);
+		return -1;
+	}
+
+	printf("%s idx: %d, init successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
+
+	ret = hb_mm_mc_start(context, &startup_params);
+	if (ret != 0)
+	{
+		printf("%s:%d hb_mm_mc_start failed.\n", __FUNCTION__, __LINE__);
+		return -1;
+	}
+
+	printf("%s idx: %d, start successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
+
+	FILE *fp_input = fopen(params->input, "rb");
+	if (NULL == fp_input) {
+		printf("Failed to open input file: %s\n", params->input);
+		return -1;
+	}
+
+	FILE *fp_output = fopen(params->output, "w+b");
+	if (NULL == fp_output) {
+		printf("Failed to open output file: %s\n", params->output);
+		return -1;
+	}
+
+	while (frame_count < params->frame_num) {
+		usleep(30*1000);
+		memset(&input_buffer, 0x00, sizeof(media_codec_buffer_t));
+		// input_buffer.type = MC_VIDEO_FRAME_BUFFER;
+		ret = hb_mm_mc_dequeue_input_buffer(context, &input_buffer, 2000);
+		if (ret != 0)
+		{
+			printf("hb_mm_mc_dequeue_input_buffer failed ret = %d\n", ret);
+			goto venc_exit;
+		}
+
+		input_buffer.type = MC_VIDEO_FRAME_BUFFER;
+		input_buffer.vframe_buf.width = context->video_enc_params.width;
+		input_buffer.vframe_buf.height = context->video_enc_params.height;
+		input_buffer.vframe_buf.pix_fmt = MC_PIXEL_FORMAT_NV12;
+		input_buffer.vframe_buf.size = input_buffer.vframe_buf.width * input_buffer.vframe_buf.height * 3 / 2;
+
+		printf("dequeue input buffer. src_idx(%d), user_ptr(%p)\n", input_buffer.vframe_buf.src_idx, input_buffer.user_ptr);
+
+		// 如果从 emmc 上读取数据，会在一定程度上影响性能
+		ret = read_input_frame(&input_buffer, fp_input);
+		if (ret != 0 || feof(fp_input)) {
+			clearerr(fp_input);
+			rewind(fp_input);
+
+			ret = read_input_frame(&input_buffer, fp_input);
+		}
+		frame_count++;
+
+		printf("%s idx: %d, frame= %d\n",
+			context->encoder ? "Encode" : "Decode", context->instance_index, frame_count);
+
+		ret = hb_mm_mc_queue_input_buffer(context, &input_buffer, 2000);
+		if (ret != 0)
+		{
+			printf("hb_mm_mc_queue_input_buffer failed, ret = 0x%x\n", ret);
+			goto venc_exit;
+		}
+
+		if (verbose) {
+			printf("%s idx: %d, send frame %d successful\n",
+				context->encoder ? "Encode" : "Decode", context->instance_index, frame_count);
+		}
+
+		memset(&ouput_buffer, 0x0, sizeof(media_codec_buffer_t));
+		memset(&info, 0x0, sizeof(media_codec_output_buffer_info_t));
+		ret = hb_mm_mc_dequeue_output_buffer(context, &ouput_buffer, &info, 2000);
+		if (ret != 0)
+		{
+			printf("%s idx: %d, hb_mm_mc_dequeue_output_buffer failed ret = %d\n",
+				context->encoder ? "Encode" : "Decode", context->instance_index, ret);
+			goto venc_exit;
+		}
+
+		if (verbose) {
+			printf("%s idx: %d, get stream %d successful\n",
+				context->encoder ? "Encode" : "Decode", context->instance_index, frame_count);
+		}
+
+		if (fp_output) {
+			fwrite(ouput_buffer.vstream_buf.vir_ptr, ouput_buffer.vstream_buf.size, 1, fp_output);
+		}
+
+		ret = hb_mm_mc_queue_output_buffer(context, &ouput_buffer, 2000);
+		if (ret != 0)
+		{
+			printf("idx: %d, hb_mm_mc_queue_output_buffer failed ret = %d \n", context->instance_index, ret);
+			goto venc_exit;
+		}
+	}
+
+venc_exit:
+	if (fp_output) {
+		fclose(fp_output);
+	}
+
+	if (fp_input) {
+		fclose(fp_input);
+	}
+
+	ret = hb_mm_mc_pause(context);
+	if (ret != 0)
+	{
+		printf("Failed to hb_mm_mc_pause ret = %d \n", ret);
+		return -1;
+	}
+
+	ret = hb_mm_mc_release(context);
+	if (ret != 0)
+	{
+		printf("Failed to hb_mm_mc_release ret = %d \n", ret);
+		return -1;
+	}
+
+	return 0;
+}
+
+static int32_t create_hb_mem_graphic_buf_from_file(hb_mem_graphic_buf_t *input_buffer,
+	int max_count, const char *file_name, int width, int height)
+{
+	uint32_t y_size = width * height;
+	int meida_codec_buffer_count = 0;
+	FILE *fp_output = fopen(file_name, "rb");
+	if (NULL == fp_output) {
+		printf("Failed to open output file: %s\n", file_name);
+		return -1;
+	}
+
+	for (size_t i = 0; i < max_count; i++){
+
+		int64_t flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
+		int ret = hb_mem_alloc_graph_buf(width, height, MEM_PIX_FMT_NV12, flags, 0, 0, input_buffer + i);
+		if (ret < 0) {
+			printf("hb_mem_alloc_graph_buf ret %d failed \n", ret);
+			return ret;
+		}
+		uint8_t *y_data = input_buffer[i].virt_addr[0];
+		uint8_t *uv_data = input_buffer[i].virt_addr[1];
+		if (fread(y_data, 1, y_size, fp_output) != y_size) {
+			hb_mem_free_buf(input_buffer[i].fd[0]);
+			break;
+		}
+		if (fread(uv_data, 1, y_size / 2, fp_output) != y_size / 2) {
+			hb_mem_free_buf(input_buffer[i].fd[0]);
+			break;
+		}
+		meida_codec_buffer_count++;
+	}
+	fclose(fp_output);
+	return meida_codec_buffer_count;
+}
+static void release_hb_mem_graphic_buf(hb_mem_graphic_buf_t *input_buffer, int max_count){
+	for (size_t i = 0; i < max_count; i++){
+		hb_mem_free_buf(input_buffer[i].fd[0]);
+	}
+}
+
+// 视频编码函数, for performance testing
+int32_t encode_video_performance_test(media_codec_context_t *context, EncodeParams *params) {
+	int32_t ret = 0;
+	int32_t frame_count = 0;
+	mc_av_codec_startup_params_t startup_params = {0};
+	media_codec_buffer_t input_buffer = {0};
+	media_codec_buffer_t ouput_buffer = {0};
+	media_codec_output_buffer_info_t info;
+
+	printf("%s...\n", __func__);
+
+	ret = hb_mm_mc_initialize(context);
+	if (0 != ret)
+	{
+		printf("hb_mm_mc_initialize failed.\n");
+		return -1;
+	}
+
+	ret = hb_mm_mc_configure(context);
+	if (0 != ret)
+	{
+		printf("hb_mm_mc_configure failed.\n");
+		hb_mm_mc_release(context);
+		return -1;
+	}
+
+	printf("%s idx: %d, init successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
+
+	ret = hb_mm_mc_start(context, &startup_params);
+	if (ret != 0)
+	{
+		printf("%s:%d hb_mm_mc_start failed.\n", __FUNCTION__, __LINE__);
+		return -1;
+	}
+
+	printf("%s idx: %d, start successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
+	#define  MEDIA_CODEC_BUFFER_MAX_COUNT 10
+	hb_mem_graphic_buf_t hb_mem_graphic_bufs[MEDIA_CODEC_BUFFER_MAX_COUNT];
+	int meida_codec_buffer_count = create_hb_mem_graphic_buf_from_file(hb_mem_graphic_bufs,
+		MEDIA_CODEC_BUFFER_MAX_COUNT, params->input, params->width, params->height);
+	if(meida_codec_buffer_count <= 0){
+		printf("file %s not have yuv data, so exit(-1).\n", params->input);
+		exit(-1);
+	}else{
+		printf("use file %s  %d frames to encode.\n", params->output, meida_codec_buffer_count);
+	}
+
+	FILE *fp_output = fopen(params->output, "w+b");
+	if (NULL == fp_output) {
+		printf("Failed to open output file: %s\n", params->output);
+		return -1;
+	}
+	int meida_codec_buffer_index = 0;
+	hb_mem_graphic_buf_t *hb_mem_graphic_buf = NULL;
+	while (frame_count < params->frame_num) {
+		usleep(33*1000);
+
+		//1. update input yuv data
+		if(meida_codec_buffer_index >= meida_codec_buffer_count){
+			meida_codec_buffer_index = 0;
+		}
+		hb_mem_graphic_buf = &hb_mem_graphic_bufs[meida_codec_buffer_index];
+		meida_codec_buffer_index++;
+
+		//2. init media_codec_buffer_t
+		memset(&input_buffer, 0x00, sizeof(media_codec_buffer_t));
+		ret = hb_mm_mc_dequeue_input_buffer(context, &input_buffer, 2000);
+		if (ret != 0)
+		{
+			printf("hb_mm_mc_dequeue_input_buffer failed ret = %d\n", ret);
+			goto venc_exit;
+		}
+		input_buffer.type = MC_VIDEO_FRAME_BUFFER;
+		input_buffer.vframe_buf.width = context->video_enc_params.width;
+		input_buffer.vframe_buf.height = context->video_enc_params.height;
+		input_buffer.vframe_buf.pix_fmt = MC_PIXEL_FORMAT_NV12;
+		input_buffer.vframe_buf.size = input_buffer.vframe_buf.width * input_buffer.vframe_buf.height * 3 / 2;
+
+		input_buffer.vframe_buf.vir_ptr[0] = hb_mem_graphic_buf->virt_addr[0];
+		input_buffer.vframe_buf.vir_ptr[1] = hb_mem_graphic_buf->virt_addr[1];
+		input_buffer.vframe_buf.phy_ptr[0] = hb_mem_graphic_buf->phys_addr[0];
+		input_buffer.vframe_buf.phy_ptr[1] = hb_mem_graphic_buf->phys_addr[1];
+
+		frame_count++;
+
+		printf("%s idx: %d, frame= %d\n",
+			context->encoder ? "Encode" : "Decode", context->instance_index, frame_count);
+
+		ret = hb_mm_mc_queue_input_buffer(context, &input_buffer, 2000);
+		if (ret != 0)
+		{
+			printf("hb_mm_mc_queue_input_buffer failed, ret = 0x%x\n", ret);
+			goto venc_exit;
+		}
+
+		if (verbose) {
+			printf("%s idx: %d, send frame %d successful\n",
+				context->encoder ? "Encode" : "Decode", context->instance_index, frame_count);
+		}
+
+		memset(&ouput_buffer, 0x0, sizeof(media_codec_buffer_t));
+		memset(&info, 0x0, sizeof(media_codec_output_buffer_info_t));
+		ret = hb_mm_mc_dequeue_output_buffer(context, &ouput_buffer, &info, 2000);
+		if (ret != 0)
+		{
+			printf("%s idx: %d, hb_mm_mc_dequeue_output_buffer failed ret = %d\n",
+				context->encoder ? "Encode" : "Decode", context->instance_index, ret);
+			goto venc_exit;
+		}
+
+		if (verbose) {
+			printf("%s idx: %d, get stream %d successful\n",
+				context->encoder ? "Encode" : "Decode", context->instance_index, frame_count);
+		}
+
+		if (fp_output) {
+			fwrite(ouput_buffer.vstream_buf.vir_ptr, ouput_buffer.vstream_buf.size, 1, fp_output);
+		}
+
+		ret = hb_mm_mc_queue_output_buffer(context, &ouput_buffer, 2000);
+		if (ret != 0)
+		{
+			printf("idx: %d, hb_mm_mc_queue_output_buffer failed ret = %d \n", context->instance_index, ret);
+			goto venc_exit;
+		}
+	}
+
+venc_exit:
+	if (fp_output) {
+		fclose(fp_output);
+	}
+
+	release_hb_mem_graphic_buf(hb_mem_graphic_bufs, meida_codec_buffer_count);
 
 	ret = hb_mm_mc_pause(context);
 	if (ret != 0)
@@ -1233,7 +1833,7 @@ int32_t decode_h264_h265_mjpeg_video(media_codec_context_t *context, DecodeParam
 					" Decoder will exit due to timeout after fetching"
 					" decoded output.\n", avpacket.size);
 
-				eos = false;
+				eos = true;
 			}
 			else
 			{
@@ -1370,12 +1970,18 @@ void *encode_thread(void *arg) {
 
 	printf("Encoding video...\n");
 	print_encode_params(params);
+	bool is_enable_external_buffer = false;
+	if( params->external_buffer ||  params->performance_test){
+		is_enable_external_buffer = true;
+	}
 	ret = vp_encode_config_param(&context,
 		params->codec_type,
 		params->width,
 		params->height,
 		params->frame_rate,
-		params->bit_rate);
+		params->bit_rate,
+		params->profile,
+		is_enable_external_buffer);
 	if (ret != 0) {
 		printf("Encode config param error, type:%d width:%d height:%d"
 			" frame_rate: %d bit_rate:%d\n",
@@ -1385,7 +1991,13 @@ void *encode_thread(void *arg) {
 			params->frame_rate,
 			params->bit_rate);
 	}
-	encode_video(&context, params);
+
+	if (params->performance_test)
+		encode_video_performance_test(&context, params);
+	else if (params->external_buffer)
+		encode_video_external_buffer(&context, params);
+	else
+		encode_video(&context, params);
 	pthread_exit(NULL);
 }
 
@@ -1562,8 +2174,8 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	// 等待100豪秒，让解码器完成所有帧的解码并被output
-	usleep(100*1000);
+	// 等待1000豪秒，让解码器完成所有帧的解码并被output
+	usleep(1000*1000);
 	decode_output_exit = 0;
 
 	// 等待所有解码输出线程结束

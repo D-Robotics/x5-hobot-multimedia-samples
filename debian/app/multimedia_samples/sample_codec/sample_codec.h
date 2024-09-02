@@ -28,7 +28,21 @@ typedef struct {
 	char input[MAX_LINE_LENGTH];
 	char output[MAX_LINE_LENGTH];
 	int32_t frame_num;
+	int32_t external_buffer;
+	int32_t performance_test;
+	char profile[32];
 } EncodeParams;
+
+typedef struct {
+	mc_h264_profile_t profile;
+	mc_h264_level_t level;
+} H264Profile;
+
+typedef struct {
+	hb_bool main_still_picture_profile_enable;
+	mc_h265_level_t level;
+	hb_s32 tier;
+} H265Profile;
 
 // 视频解码参数结构体
 typedef struct {

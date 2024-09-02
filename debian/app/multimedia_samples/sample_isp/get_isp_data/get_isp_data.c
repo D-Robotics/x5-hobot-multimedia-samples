@@ -15,6 +15,8 @@
 
 #include "common_utils.h"
 
+#define MAX_SENSORS 4
+
 static struct option const long_options[] = {
 	{"sensor", required_argument, NULL, 's'},
 	{"settle", optional_argument, NULL, 't'},
@@ -23,7 +25,7 @@ static struct option const long_options[] = {
 };
 
 static int create_and_run_vflow(pipe_contex_t *pipe_contex);
-static void handle_user_command(void *contex);
+static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count);
 
 static void print_help() {
 	printf("Usage: get_isp_data [OPTIONS]\n");
@@ -49,17 +51,24 @@ static uint32_t sensor_mode = 0; // 1: NORMAL_M; 2: DOL2_M; 6: SLAVE_M
 
 int main(int argc, char** argv) {
 	int ret = 0;
-	pipe_contex_t pipe_contex = {0};
+	pipe_contex_t pipe_contex[MAX_SENSORS] = {0};
 	int opt_index = 0;
 	int c = 0;
 	int index = -1;
+	int sensor_indexes[MAX_SENSORS] = {-1};
+	int sensor_count = 0;
 
 	while((c = getopt_long(argc, argv, "s:t:m:h",
 							long_options, &opt_index)) != -1) {
 		switch (c)
 		{
 		case 's':
-			index = atoi(optarg);
+			if (sensor_count < MAX_SENSORS) {
+				sensor_indexes[sensor_count++] = atoi(optarg);
+			} else {
+				printf("Maximum number of sensors exceeded\n");
+				return 0;
+			}
 			break;
 		case 't':
 			settle = atoi(optarg);
@@ -73,33 +82,54 @@ int main(int argc, char** argv) {
 			return 0;
 		}
 	}
-	if (index < vp_get_sensors_list_number() && index >= 0) {
-		pipe_contex.sensor_config = vp_sensor_config_list[index];
-		printf("Using index:%d  sensor_name:%s  config_file:%s\n",
-				index,
-				vp_sensor_config_list[index]->sensor_name,
-				vp_sensor_config_list[index]->config_file);
-		ret = vp_sensor_fixed_mipi_host(pipe_contex.sensor_config, &pipe_contex.csi_config);
-		if (ret != 0) {
-			printf("No Camera Sensor found. Please check if the specified "
-				"sensor is connected to the Camera interface.\n");
-			return ret;
-		}
-	} else {
-		printf("Unsupport sensor index:%d\n", index);
+
+	if (sensor_count == 0) {
+		printf("No sensors specified.\n");
 		print_help();
 		return 0;
 	}
 
+	for (int i = 0; i < sensor_count; ++i) {
+		index = sensor_indexes[i];
+		if (index < vp_get_sensors_list_number() && index >= 0) {
+			pipe_contex[i].sensor_config = vp_sensor_config_list[index];
+			printf("Using index:%d  sensor_name:%s  config_file:%s\n",
+					index,
+					vp_sensor_config_list[index]->sensor_name,
+					vp_sensor_config_list[index]->config_file);
+			ret = vp_sensor_fixed_mipi_host(pipe_contex[i].sensor_config, &pipe_contex[i].csi_config);
+			if (ret != 0) {
+				printf("No Camera Sensor found. Please check if the specified "
+					"sensor is connected to the Camera interface.\n");
+				return ret;
+			}
+		} else {
+			printf("Unsupported sensor index:%d\n", index);
+			print_help();
+			return 0;
+		}
+	}
+
 	hb_mem_module_open();
-	ret = create_and_run_vflow(&pipe_contex);
-	ERR_CON_EQ(ret, 0);
 
-	handle_user_command(&pipe_contex);
+	for (int i = 0; i < sensor_count; ++i) {
+		ret = create_and_run_vflow(&pipe_contex[i]);
+		if (ret != 0) {
+			printf("create_and_run_vflow failed for sensor %d. ret = %d\n", sensor_indexes[i], ret);
+			return ret;
+		}
+	}
 
-	ret = hbn_vflow_stop(pipe_contex.vflow_fd);
-	ERR_CON_EQ(ret, 0);
-	hbn_vflow_destroy(pipe_contex.vflow_fd);
+	handle_user_command(pipe_contex, sensor_count);
+
+	for (int i = 0; i < sensor_count; ++i) {
+		ret = hbn_vflow_stop(pipe_contex[i].vflow_fd);
+		if (ret != 0) {
+			printf("hbn_vflow_stop failed for sensor %d. ret = %d\n", sensor_indexes[i], ret);
+		}
+		hbn_vflow_destroy(pipe_contex[i].vflow_fd);
+	}
+
 	hb_mem_module_close();
 
 	return 0;
@@ -272,12 +302,13 @@ void isp_dump_func(hbn_vnode_handle_t isp_node_handle) {
 
 	// 将帧数据写入文件
 	snprintf(dst_file, sizeof(dst_file),
-		"isp_chn%d_%dx%d_stride_%d_frameid_%d_ts_%ld.yuv",
-		chn_id,
+		"handle_%d_isp_chn%d_%dx%d_stride_%d_frameid_%d_ts_%ld.yuv",
+		(int)isp_node_handle, chn_id,
 		out_img.buffer.width, out_img.buffer.height, out_img.buffer.stride,
 		out_img.info.frame_id, out_img.info.timestamps);
-	printf("isp dump yuv %dx%d(stride:%d), buffer size: %ld + %ld frame id: %d,"
+	printf("handle %d isp dump yuv %dx%d(stride:%d), buffer size: %ld + %ld frame id: %d,"
 			" timestamp: %ld\n",
+			(int)isp_node_handle,
 			out_img.buffer.width, out_img.buffer.height,
 			out_img.buffer.stride,
 			out_img.buffer.size[0], out_img.buffer.size[1],
@@ -293,20 +324,15 @@ void isp_dump_func(hbn_vnode_handle_t isp_node_handle) {
 	hbn_vnode_releaseframe(isp_node_handle, chn_id, &out_img);
 }
 
-
-static void handle_user_command(void *contex)
+static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count)
 {
-	int i = 0;
+	int i = 0, j = 0;
 	char option = 'a';
-	pipe_contex_t *pipe_contex;
 	hbn_vnode_handle_t isp_node_handle;
 	int running = -1;
 
-	pipe_contex = (pipe_contex_t *)contex;
-	isp_node_handle = pipe_contex->isp_node_handle;
-
 	command_help();
-	printf("\nCommand: "); // 将打印移到循环外部
+	printf("\nCommand: ");
 
 	while (running && ((option=getchar()) != EOF)) {
 		switch (option) {
@@ -314,16 +340,23 @@ static void handle_user_command(void *contex)
 				printf("quit\n");
 				running = 0;
 				return;
-			case 'g':  // get a raw file
-				isp_dump_func(isp_node_handle);
-				break;
-			case 'l': // 循环获取，用于计算帧率
-				for (i = 0; i < 12; i++)
+			case 'g':  // get a isp yuv file for all sensors
+				for (i = 0; i < sensor_count; i++) {
+					isp_node_handle = pipe_contex[i].isp_node_handle;
 					isp_dump_func(isp_node_handle);
+				}
+				break;
+			case 'l':// get multiple frames for all sensors
+				for (j = 0; j < 12; j++) {
+					for (i = 0; i < sensor_count; i++) {
+						isp_node_handle = pipe_contex[i].isp_node_handle;
+						isp_dump_func(isp_node_handle);
+					}
+				}
 				break;
 			case 'h':
 				command_help();
-				break; // 添加 break 以退出 switch 语句
+				break;
 			case '\n':
 			case '\r':
 				continue;
@@ -332,7 +365,7 @@ static void handle_user_command(void *contex)
 				command_help();
 				break;
 		}
-		printf("\nCommand: "); // 统一在循环末尾打印
+		printf("\nCommand: ");
 	}
 
 	return;

@@ -1,0 +1,8 @@
+*.o
+*.so
+*.a
+*.d
+*.patch
+*.vscode
+
+sample_vot/sample_vot

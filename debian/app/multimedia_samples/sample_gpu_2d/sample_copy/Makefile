@@ -4,11 +4,13 @@ RELATIVE_PATH := $(shell realpath --relative-to=$(PLATFORM_SAMPLES_DIR) $(CUR_DI
 
 TARGET = copy
 
+SRC_PATH += ${CUR_DIR}/../utils
 SRCS := $(foreach cf, $(SRC_PATH), $(wildcard $(cf)/*.c))
 OBJS :=  $(SRCS:.c=.o)
 
 .PHONY: all clean install
 
+INCS += -I $(CUR_DIR)/../utils/
 LIBS += -lNano2Dutil -lNano2D -lm
 %.o:%.c
 	@mkdir -p $(abspath $(dir $@))

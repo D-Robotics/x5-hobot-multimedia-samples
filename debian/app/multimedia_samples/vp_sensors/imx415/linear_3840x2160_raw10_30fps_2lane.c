@@ -9,16 +9,16 @@ static mipi_config_t imx415_mipi_config = {
 	.rx_enable = 1,
 	.rx_attr = {
 		.phy = 0,
-		.lane = 4,
+		.lane = 2,
 		.datatype = RAW10,
 		.fps = SENSOE_FPS,
 		.mclk = 24,
-		.mipiclk = 2880,
+		.mipiclk = 3500,
 		.width = SENSOR_WIDTH,
 		.height = SENSOR_HEIGHT,
 		.linelenth = 4400,
 		.framelenth = 2700,
-		.settle = 10,
+		.settle = 0,
 		.channel_num = 1,
 		.channel_sel = {0},
 		.hsdTime = 0,
@@ -43,7 +43,7 @@ static camera_config_t imx415_camera_config = {
 	.gpio_level_bit = 0x00,
 	.mipi_cfg = &imx415_mipi_config,
 	.calib_lname = "disable",
-	.config_index = 1, //4lane
+	.config_index = 0, //2lane
 };
 
 static vin_node_attr_t imx415_vin_node_attr = {
@@ -103,12 +103,12 @@ static isp_ochn_attr_t imx415_isp_ochn_attr = {
 	.bit_width = 8,
 };
 
-vp_sensor_config_t imx415_linear_3480x2160_raw10_30fps_4lane = {
+vp_sensor_config_t imx415_linear_3480x2160_raw10_30fps_2lane = {
 	.chip_id_reg = 0x4001,
 	.chip_id = 0x03,
 	.sensor_i2c_addr_list = {0x1A},
-	.sensor_name = "imx415-30fps-4lane",
-	.config_file = "linear_3840x2160_raw10_30fps_4lane.c",
+	.sensor_name = "imx415-30fps-2lane",
+	.config_file = "linear_3840x2160_raw10_30fps_2lane.c",
 	.camera_config = &imx415_camera_config,
 	.vin_ichn_attr = &imx415_vin_ichn_attr,
 	.vin_node_attr = &imx415_vin_node_attr,

@@ -165,11 +165,15 @@ static int enable_sensor_pin(int gpio_number, int active)
 		return -1;
 	}
 
+	usleep(30 * 1000);
+
 	// Set GPIO direction to output
 	if (gpio_set_direction(gpio_number, "out") != 0) {
 		printf("Failed to set GPIO direction\n");
 		return -1;
 	}
+
+	usleep(30 * 1000);
 
 	/* gpio level should be keep same with sensor driver power_on api */
 	// Set GPIO value to active

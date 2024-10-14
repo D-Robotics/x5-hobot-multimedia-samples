@@ -1,8 +1,8 @@
 #include "vp_sensors.h"
 
-#define SENSOR_WIDTH  1920
-#define SENSOR_HEIGHT  1080
-#define SENSOE_FPS 30
+#define SENSOR_WIDTH  3264
+#define SENSOR_HEIGHT  2464
+#define SENSOE_FPS 15
 #define RAW10 0x2B
 
 static mipi_config_t imx219_mipi_config = {
@@ -13,12 +13,12 @@ static mipi_config_t imx219_mipi_config = {
 		.datatype = RAW10,
 		.fps = SENSOE_FPS,
 		.mclk = 24,
-		.mipiclk = 1728,
+		.mipiclk = 2400,
 		.width = SENSOR_WIDTH,
 		.height = SENSOR_HEIGHT,
 		.linelenth = 3448,
-		.framelenth = 1166,
-		.settle = 30,
+		.framelenth = 2504,
+		.settle = 20,
 		.channel_num = 1,
 		.channel_sel = {0},
 	},
@@ -39,7 +39,7 @@ static camera_config_t imx219_camera_config = {
 	.gpio_enable_bit = 0x01,
 	.gpio_level_bit = 0x00,
 	.mipi_cfg = &imx219_mipi_config,
-	.calib_lname = "/usr/hobot/bin/imx219_tuning_1920x1080.json",
+	.calib_lname = "/usr/hobot/bin/imx219_tuning_3264x2464.json",
 };
 
 static vin_node_attr_t imx219_vin_node_attr = {
@@ -99,12 +99,12 @@ static isp_ochn_attr_t imx219_isp_ochn_attr = {
 	.bit_width = 8,
 };
 
-vp_sensor_config_t imx219_linear_1920x1080_raw10_30fps_2lane = {
+vp_sensor_config_t imx219_linear_3264x2464_raw10_15fps_2lane = {
 	.chip_id_reg = 0x0000,
 	.chip_id = 0x0219,
 	.sensor_i2c_addr_list = {0x10},
-	.sensor_name = "imx219-30fps",
-	.config_file = "linear_1920x1080_raw10_30fps_2lane.c",
+	.sensor_name = "imx219-15fps",
+	.config_file = "linear_3264x2464_raw10_15fps_2lane.c",
 	.camera_config = &imx219_camera_config,
 	.vin_ichn_attr = &imx219_vin_ichn_attr,
 	.vin_node_attr = &imx219_vin_node_attr,

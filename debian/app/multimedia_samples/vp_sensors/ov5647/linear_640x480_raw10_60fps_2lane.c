@@ -1,8 +1,8 @@
 #include "vp_sensors.h"
 
-#define SENSOR_WIDTH  1920
-#define SENSOR_HEIGHT  1080
-#define SENSOE_FPS 30
+#define SENSOR_WIDTH  640
+#define SENSOR_HEIGHT  480
+#define SENSOE_FPS 60
 #define RAW10 0x2B
 
 static mipi_config_t mipi_config = {
@@ -16,8 +16,8 @@ static mipi_config_t mipi_config = {
 		.mipiclk = 1000,
 		.width = SENSOR_WIDTH,
 		.height = SENSOR_HEIGHT,
-		.linelenth = 2416,
-		.framelenth = 1104,
+		.linelenth = 1852,
+		.framelenth = 504,
 		.settle = 30,
 		.channel_num = 1,
 		.channel_sel = {0},
@@ -35,7 +35,7 @@ static camera_config_t camera_config = {
 	.mipi_cfg = &mipi_config,
 	.gpio_enable_bit = 0x01,
 	.gpio_level_bit = 0x00,
-	.calib_lname = "/usr/hobot/bin/ov5647_tuning_1920x1080.json",
+	.calib_lname = "/usr/hobot/bin/ov5647_tuning_640x480.json",
 };
 
 static vin_node_attr_t vin_node_attr = {
@@ -95,11 +95,11 @@ static isp_ochn_attr_t isp_ochn_attr = {
 	.bit_width = 8,
 };
 
-vp_sensor_config_t ov5647_linear_1920x1080_raw10_30fps_2lane = {
+vp_sensor_config_t ov5647_linear_640x480_raw10_60fps_2lane = {
 	.chip_id_reg = 0x300A,
 	.chip_id = 0x5647,
-	.sensor_name = "ov5647-1920x1080-30fps",
-	.config_file = "linear_1920x1080_raw10_30fps_2lane.c",
+	.sensor_name = "ov5647-640x480-60fps",
+	.config_file = "linear_640x480_raw10_60fps_2lane.c",
 	.camera_config = &camera_config,
 	.vin_ichn_attr = &vin_ichn_attr,
 	.vin_node_attr = &vin_node_attr,

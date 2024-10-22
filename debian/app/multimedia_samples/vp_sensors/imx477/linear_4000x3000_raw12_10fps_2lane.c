@@ -1,8 +1,8 @@
 #include "vp_sensors.h"
 
-#define SENSOR_WIDTH  1920
-#define SENSOR_HEIGHT  1080
-#define SENSOE_FPS 50
+#define SENSOR_WIDTH  4000
+#define SENSOR_HEIGHT  3000
+#define SENSOE_FPS 10
 #define RAW12 0x2C
 
 static mipi_config_t imx477_mipi_config = {
@@ -16,8 +16,8 @@ static mipi_config_t imx477_mipi_config = {
 		.mipiclk = 2250,
 		.width = SENSOR_WIDTH,
 		.height = SENSOR_HEIGHT,
-		.linelenth = 2976,//3008
-		.framelenth = 1313,//1314
+		.linelenth = 6500,
+		.framelenth = 2584,
 		.settle = 30,
 		.channel_num = 1,
 		.channel_sel = {0},
@@ -39,7 +39,7 @@ static camera_config_t imx477_camera_config = {
 	.gpio_enable_bit = 0x01,
 	.gpio_level_bit = 0x00,
 	.mipi_cfg = &imx477_mipi_config,
-	.calib_lname = "/usr/hobot/bin/imx477_tuning_1920x1080.json",
+	.calib_lname = "/usr/hobot/bin/imx477_tuning_4000x3000.json",
 };
 
 static vin_node_attr_t imx477_vin_node_attr = {
@@ -99,12 +99,12 @@ static isp_ochn_attr_t imx477_isp_ochn_attr = {
 	.bit_width = 8,
 };
 
-vp_sensor_config_t imx477_linear_1920x1080_raw12_50fps_2lane = {
+vp_sensor_config_t imx477_linear_4000x3000_raw12_10fps_2lane = {
 	.chip_id_reg = 0x0016,
 	.chip_id = 0x0477,
 	.sensor_i2c_addr_list = {0x1A},
-	.sensor_name = "imx477-1920x1080-50fps",
-	.config_file = "linear_1920x1080_raw12_50fps_2lane.c",
+	.sensor_name = "imx477-4000x3000-10fps",
+	.config_file = "linear_4000x3000_raw12_10fps_2lane.c",
 	.camera_config = &imx477_camera_config,
 	.vin_ichn_attr = &imx477_vin_ichn_attr,
 	.vin_node_attr = &imx477_vin_node_attr,

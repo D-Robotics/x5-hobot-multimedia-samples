@@ -22,13 +22,6 @@ elif echo "$issue" | grep -q "Ubuntu"; then
     python -m http.server 80 -d "${local_path}/WebServer/sc_lighttpd/webpages" &
 fi
 
-modprobe panel-jc-050hd134
-modprobe galcore
-modprobe vio_n2d
-modprobe lontium_lt8618
-modprobe vs-x5-syscon-bridge
-modprobe vs_drm
-
 cd "${local_path}"/sunrise_camera/bin || exit 1
 echo "============= Start Sunrise Camera ==============="
 export LD_LIBRARY_PATH=../bin:"${LD_LIBRARY_PATH}"

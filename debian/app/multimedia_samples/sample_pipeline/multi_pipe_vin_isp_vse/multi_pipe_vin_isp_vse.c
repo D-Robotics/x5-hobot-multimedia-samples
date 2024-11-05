@@ -435,7 +435,8 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	vin_attr_ex_t vin_attr_ex;
 	uint32_t hw_id = 0;
 	int32_t ret = 0;
-	uint32_t chn_id = 0;
+	uint32_t ichn_id = 0;
+	uint32_t ochn_id = 0;
 	uint64_t vin_attr_ex_mask = 0;
 
 	sensor_config = pipe_contex->sensor_config;
@@ -451,7 +452,6 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 		//设备树中没有配置mclk：使用外部晶振
 		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
 			pipe_contex->csi_config.index);
-		vin_attr_ex.vin_attr_ex_mask = 0x00;
 	}else{
 		vin_attr_ex.vin_attr_ex_mask = 0x80;	//bit7 for mclk
 		vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000; // 24MHz
@@ -463,10 +463,10 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	ret = hbn_vnode_set_attr(*vin_node_handle, vin_node_attr);
 	ERR_CON_EQ(ret, 0);
 	// 设置输入通道的属性
-	ret = hbn_vnode_set_ichn_attr(*vin_node_handle, chn_id, vin_ichn_attr);
+	ret = hbn_vnode_set_ichn_attr(*vin_node_handle, ichn_id, vin_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 	// 设置输出通道的属性
-	ret = hbn_vnode_set_ochn_attr(*vin_node_handle, chn_id, vin_ochn_attr);
+	ret = hbn_vnode_set_ochn_attr(*vin_node_handle, ochn_id, vin_ochn_attr);
 	ERR_CON_EQ(ret, 0);
 	vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
 	if (vin_attr_ex_mask) {
@@ -489,7 +489,8 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	isp_ochn_attr_t *isp_ochn_attr = NULL;
 	hbn_vnode_handle_t *isp_node_handle = NULL;
 	hbn_buf_alloc_attr_t alloc_attr = {0};
-	uint32_t chn_id = 0;
+	uint32_t ichn_id = 0;
+	uint32_t ochn_id = 0;
 	int ret = 0;
 
 	sensor_config = pipe_contex->sensor_config;
@@ -502,9 +503,9 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vnode_set_attr(*isp_node_handle, isp_attr);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vnode_set_ochn_attr(*isp_node_handle, chn_id, isp_ochn_attr);
+	ret = hbn_vnode_set_ochn_attr(*isp_node_handle, ochn_id, isp_ochn_attr);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vnode_set_ichn_attr(*isp_node_handle, chn_id, isp_ichn_attr);
+	ret = hbn_vnode_set_ichn_attr(*isp_node_handle, ichn_id, isp_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 
 	alloc_attr.buffers_num = 3;
@@ -512,7 +513,7 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
 						| HB_MEM_USAGE_CPU_WRITE_OFTEN
 						| HB_MEM_USAGE_CACHED;
-	ret = hbn_vnode_set_ochn_buf_attr(*isp_node_handle, chn_id, &alloc_attr);
+	ret = hbn_vnode_set_ochn_buf_attr(*isp_node_handle, ochn_id, &alloc_attr);
 	ERR_CON_EQ(ret, 0);
 
 	return 0;
@@ -525,13 +526,13 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index) {
 	vse_attr_t vse_attr = {0};
 	vse_ichn_attr_t vse_ichn_attr = {0};
 	vse_ochn_attr_t vse_ochn_attr[VSE_MAX_CHANNELS] = {0};
-	uint32_t chn_id = 0;
+	uint32_t ichn_id = 0;
 	uint32_t hw_id = 0;
 	uint32_t input_width = 0, input_height = 0;
 	uint32_t output_width = 0, output_height = 0;
 	hbn_buf_alloc_attr_t alloc_attr = {0};
 
-	ret = hbn_vnode_get_ichn_attr(pipe_contex->isp_node_handle, chn_id, &isp_ichn_attr);
+	ret = hbn_vnode_get_ichn_attr(pipe_contex->isp_node_handle, ichn_id, &isp_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 	input_width = isp_ichn_attr.width;
 	input_height = isp_ichn_attr.height;
@@ -563,7 +564,7 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index) {
 	ret = hbn_vnode_set_attr(*vse_node_handle, &vse_attr);
 	ERR_CON_EQ(ret, 0);
 
-	ret = hbn_vnode_set_ichn_attr(*vse_node_handle, chn_id, &vse_ichn_attr);
+	ret = hbn_vnode_set_ichn_attr(*vse_node_handle, ichn_id, &vse_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 
 	alloc_attr.buffers_num = 3;

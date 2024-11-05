@@ -24,12 +24,20 @@ typedef struct
     pthread_cond_t cond_data_available;
 } tsQueue;
 
+typedef int(*queue_process_func_t)(void *data, void *handle);
+
 teQueueStatus mQueueCreate(tsQueue *psQueue, uint32_t u32Length);
 teQueueStatus mQueueDestroy(tsQueue *psQueue);
 teQueueStatus mQueueEnqueue(tsQueue *psQueue, void *pvData);
 teQueueStatus mQueueEnqueueEx(tsQueue *psQueue, void *pvData);
+teQueueStatus mQueueEnqueueExWidhFunc(tsQueue *psQueue, void *pvData,
+	queue_process_func_t process_func_cb, void *handle);
+
 teQueueStatus mQueueDequeue(tsQueue *psQueue, void **ppvData);
 teQueueStatus mQueueDequeueTimed(tsQueue *psQueue, uint32_t u32WaitTimeMil, void **ppvData);
+teQueueStatus mQueueDequeueTimedWidthFunc(tsQueue *psQueue, uint32_t u32WaitTimeMil, void **ppvData,
+	queue_process_func_t process_func_cb, void *handle);
+
 int mQueueIsFull(tsQueue *psQueue);
 int mQueueIsEmpty(tsQueue *psQueue);
 

@@ -18,6 +18,11 @@ static gdc_list_info_t g_gdc_list_info[] = {
         .sensor_name = "sc230ai",
         .gdc_file_name = "./gdc_bin/sc230ai_gdc.bin",
         .is_valid = -1
+    },
+	{
+        .sensor_name = "imx415",
+        .gdc_file_name = "./gdc_bin/imx415_gdc.bin",
+        .is_valid = -1
     }
 };
 
@@ -164,7 +169,7 @@ static int create_gdc_node(pipe_contex_t *pipe_contex, char *sensor_name) {
 		return -1;
 	}
 	hbn_buf_alloc_attr_t alloc_attr = {0};
-	alloc_attr.buffers_num = 3;
+	alloc_attr.buffers_num = PILELINE_OUT_BUFFER_COUNT;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN
 		| HB_MEM_USAGE_CACHED |HB_MEM_USAGE_GRAPHIC_CONTIGUOUS_BUF;
@@ -223,7 +228,6 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 		//设备树中没有配置mclk：使用外部晶振
 		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
 			pipe_contex->csi_config.index);
-		vin_attr_ex.vin_attr_ex_mask = 0x00;
 	}else{
 		vin_attr_ex.vin_attr_ex_mask = 0x80;	//bit7 for mclk
 		vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000; // 24MHz
@@ -254,7 +258,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 			ERR_CON_EQ(ret, 0);
 		}
 	}
-	alloc_attr.buffers_num = 3;
+	alloc_attr.buffers_num = PILELINE_OUT_BUFFER_COUNT;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
 						| HB_MEM_USAGE_CPU_WRITE_OFTEN
@@ -293,7 +297,7 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	ret = hbn_vnode_set_ichn_attr(*isp_node_handle, chn_id, isp_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 
-	alloc_attr.buffers_num = 3;
+	alloc_attr.buffers_num = PILELINE_OUT_BUFFER_COUNT;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
 						| HB_MEM_USAGE_CPU_WRITE_OFTEN
@@ -352,7 +356,7 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index, camer
 	ret = hbn_vnode_set_ichn_attr(*vse_node_handle, chn_id, &vse_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 
-	alloc_attr.buffers_num = 3;
+	alloc_attr.buffers_num = PILELINE_OUT_BUFFER_COUNT;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN
 		| HB_MEM_USAGE_CACHED |HB_MEM_USAGE_GRAPHIC_CONTIGUOUS_BUF;
@@ -369,6 +373,7 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index, camer
 
 	return 0;
 }
+
 int vp_get_vse_channel(int input_width, int input_height, int output_width, int output_height){
 	int input_size = input_width * input_height;
 	int output_size = output_width * output_height;
@@ -399,9 +404,12 @@ int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t*
 	if(vp_pipeline_info->enable_gdc){
 		create_gdc_node(pipe_contex, vp_pipeline_info->sensor_name);
 	}
-	ret = create_vse_node(pipe_contex,
-		vp_pipeline_info->vse_bind_index, &(vp_pipeline_info->camera_config_info));
-	ERR_CON_EQ(ret, 0);
+	if(vp_pipeline_info->enable_vse){
+		ret = create_vse_node(pipe_contex,
+			vp_pipeline_info->vse_bind_index, &(vp_pipeline_info->camera_config_info));
+		ERR_CON_EQ(ret, 0);
+	}
+
 
 	// 创建HBN flow
 	ret = hbn_vflow_create(&pipe_contex->vflow_fd);
@@ -419,9 +427,12 @@ int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t*
 		ERR_CON_EQ(ret, 0);
 	}
 
-	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
-							pipe_contex->vse_node_handle);
-	ERR_CON_EQ(ret, 0);
+	if(vp_pipeline_info->enable_vse){
+		ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
+								pipe_contex->vse_node_handle);
+		ERR_CON_EQ(ret, 0);
+	}
+
 	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
 							pipe_contex->vin_node_handle,
 							0,
@@ -437,19 +448,30 @@ int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t*
 								0);
 		ERR_CON_EQ(ret, 0);
 
-		ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
-								pipe_contex->gdc_node_handle,
-								0,
-								pipe_contex->vse_node_handle,
-								0);
-		ERR_CON_EQ(ret, 0);
+		if(vp_pipeline_info->enable_vse){
+			ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+						pipe_contex->gdc_node_handle,
+						0,
+						pipe_contex->vse_node_handle,
+						0);
+			ERR_CON_EQ(ret, 0);
+			printf("[%d] gdc: enable, vse: enable\n", vp_pipeline_info->channel);
+		}else{
+			printf("[%d] gdc: enable %ld, vse: disable\n", vp_pipeline_info->channel, pipe_contex->gdc_node_handle);
+		}
 	}else{
-		ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
-								pipe_contex->isp_node_handle,
-								0,
-								pipe_contex->vse_node_handle,
-								0);
-		ERR_CON_EQ(ret, 0);
+		if(vp_pipeline_info->enable_vse){
+			ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+									pipe_contex->isp_node_handle,
+									vp_pipeline_info->enable_online,
+									pipe_contex->vse_node_handle,
+									0);
+			ERR_CON_EQ(ret, 0);
+			printf("[%d] gdc: disable, vse: enable, online:%d\n",
+				vp_pipeline_info->channel, vp_pipeline_info->enable_online);
+		}else{
+			printf("[%d] gdc: disable, vse: disable\n", vp_pipeline_info->channel);
+		}
 	}
 
 	ret = hbn_camera_attach_to_vin(pipe_contex->cam_fd,
@@ -551,7 +573,7 @@ int vp_send_to_vse_feedback(pipe_contex_t *pipe_contex, int vse_channel, hbn_vno
 
 	int ret = hbn_vnode_sendframe(pipe_contex->vse_node_handle, vse_channel, src);
 	if (ret != 0) {
-		printf("hbn_vnode_sendframe to vse failed(%d)\n", ret);
+		printf("[vp_send_to_vse_feedback] hbn_vnode_sendframe to vse failed(%d)\n", ret);
 		return -1;
 	}
 
@@ -562,7 +584,7 @@ int vp_get_from_vse_feedback(pipe_contex_t *pipe_contex, int vse_channel, hbn_vn
 
 	int ret = hbn_vnode_getframe(pipe_contex->vse_node_handle, vse_channel, 2000 ,src);
 	if (ret != 0) {
-		printf("hbn_vnode_getframe to vse failed(%d)\n", ret);
+		printf("[vp_send_to_vse_feedback] hbn_vnode_getframe to vse failed(%d)\n", ret);
 		return -1;
 	}
 	return 0;

@@ -144,7 +144,6 @@ void H264MainVideoSource::incomingDataHandler1()
 			memcpy(fTo, nalu.buf, nalu.len);
 
 			/*printf("fMaxSize=%d, fFrameSize = %d, fNumTruncatedBytes=%d\n", fMaxSize, fFrameSize, fNumTruncatedBytes);*/
-
 			if (fPresentationTime.tv_sec == 0 && fPresentationTime.tv_usec == 0)
 			{
 				// This is the first frame, so use the current time:
@@ -154,11 +153,30 @@ void H264MainVideoSource::incomingDataHandler1()
 			}
 			else if (nalu.nal_unit_type == 1 || nalu.nal_unit_type == 5)
 			{
-				unsigned uSeconds = fPresentationTime.tv_usec + (info.pts  - fPts);
-				fPresentationTime.tv_sec += uSeconds / 1000000;
-				fPresentationTime.tv_usec = uSeconds % 1000000;
-				fPts = info.pts;
-				gettimeofday(&fPresentationTime, NULL);
+				if(info.pts >= 0){ //pipeline 中产生时间戳时，优先使用Pipeline的时间戳
+					unsigned long long uSeconds_sum_old_tmp = fPresentationTime.tv_sec * 1000000 + fPresentationTime.tv_usec;
+
+					unsigned long long uSeconds = fPresentationTime.tv_usec + (info.pts  - fPts); //基于系统时间增长
+					fPresentationTime.tv_sec += uSeconds / 1000000;
+					fPresentationTime.tv_usec = uSeconds % 1000000;
+
+					unsigned long long uSeconds_sum_new_tmp = fPresentationTime.tv_sec * 1000000 + fPresentationTime.tv_usec;
+
+					long long sum_diff = uSeconds_sum_new_tmp - uSeconds_sum_old_tmp;
+#if 0
+					if((sum_diff < 32000) || (sum_diff > 34000) ){
+						SC_LOGW("[%s] [%s] sum_diff is error %ld\n", fShmId, fShmName, sum_diff);
+					}
+
+					long long pts_diff = info.pts  - fPts;
+					if((pts_diff < 32000) || (pts_diff > 34000) ){
+						SC_LOGW("[%s] [%s] pts_diff is error %ld\n", fShmId, fShmName, pts_diff);
+					}
+#endif
+					fPts = info.pts;
+				}else{//pipeline 没有时间戳时，使用gettimeofday， 缺点是 用户设置系统时间时，会导致RTSP丢包
+					gettimeofday(&fPresentationTime, NULL);
+				}
 			}
 
 #if 0

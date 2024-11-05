@@ -29,6 +29,16 @@ static gdc_list_info_t g_gdc_list_info[] = {
         .sensor_name = "sc230ai",
         .gdc_file_name = "../gdc_bin/sc230ai_gdc.bin",
         .is_valid = -1
+    },
+	{
+        .sensor_name = "imx415",
+        .gdc_file_name = "../gdc_bin/imx415_gdc.bin",
+        .is_valid = -1
+    },
+	{
+        .sensor_name = "sc1330t",
+        .gdc_file_name = "../gdc_bin/sc1330t_gdc.bin",
+        .is_valid = -1
     }
 };
 
@@ -57,7 +67,7 @@ static int get_gdc_config(const char *gdc_bin_file, hb_mem_common_buf_t *bin_buf
 	fclose(fp);
 
 	memset(bin_buf, 0, sizeof(hb_mem_common_buf_t));
-	alloc_flags = HB_MEM_USAGE_MAP_INITIALIZED | HB_MEM_USAGE_PRIV_HEAP_2_RESERVERD | HB_MEM_USAGE_CPU_READ_OFTEN |
+	alloc_flags = HB_MEM_USAGE_MAP_INITIALIZED | HB_MEM_USAGE_PRIV_HEAP_2_RESERVERD | HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_HW_GDC |
 				HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
 	ret = hb_mem_alloc_com_buf(file_size, alloc_flags, bin_buf);
 	if (ret != 0 || bin_buf->virt_addr == NULL) {
@@ -177,6 +187,7 @@ int32_t vp_gdc_init(vp_vflow_contex_t *vp_vflow_contex){
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN |
 					HB_MEM_USAGE_CPU_WRITE_OFTEN |
+					HB_MEM_USAGE_HW_GDC_OUT|
 					HB_MEM_USAGE_CACHED;
 	ret = hbn_vnode_set_ochn_buf_attr(vp_vflow_contex->gdc_info.gdc_fd, chn_id, &alloc_attr);
 	if(ret != 0){
@@ -212,7 +223,7 @@ int32_t vp_gdc_deinit(vp_vflow_contex_t *vp_vflow_contex){
 int32_t vp_gdc_send_frame(vp_vflow_contex_t *vp_vflow_contex, hbn_vnode_image_t *image_frame)
 {
 	int32_t ret = 0;
-	hbn_vnode_handle_t gdc_handle = vp_vflow_contex->gdc_info.bin_buf.fd;
+	hbn_vnode_handle_t gdc_handle = vp_vflow_contex->gdc_info.gdc_fd;
 	ret = hbn_vnode_sendframe(gdc_handle, 0, image_frame);
 	if (ret != 0) {
 		SC_LOGE("hbn_vnode_sendframe failed(%d)", ret);
@@ -225,7 +236,7 @@ int32_t vp_gdc_get_frame(vp_vflow_contex_t *vp_vflow_contex,
 	int32_t ochn_id, ImageFrame *frame)
 {
 	int32_t ret = 0;
-	hbn_vnode_handle_t gdc_handle = vp_vflow_contex->gdc_info.bin_buf.fd;
+	hbn_vnode_handle_t gdc_handle = vp_vflow_contex->gdc_info.gdc_fd;
 
 	ret = hbn_vnode_getframe(gdc_handle, ochn_id, VP_GET_FRAME_TIMEOUT, frame->hbn_vnode_image);
 	if (ret != 0) {
@@ -239,7 +250,7 @@ int32_t vp_gdc_release_frame(vp_vflow_contex_t *vp_vflow_contex,
 	int32_t ochn_id, ImageFrame *frame)
 {
 	int32_t ret = 0;
-	hbn_vnode_handle_t gdc_handle = vp_vflow_contex->gdc_info.bin_buf.fd;
+	hbn_vnode_handle_t gdc_handle = vp_vflow_contex->gdc_info.gdc_fd;
 
 	ret = hbn_vnode_releaseframe(gdc_handle, ochn_id, frame->hbn_vnode_image);
 

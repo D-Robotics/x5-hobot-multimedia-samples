@@ -9,3 +9,5 @@
 1-custom_config/chessboard/*.png
 2-generate_bin/generate_bin
 3-gdc_static_valid/gdc_static_valid
+4-gdc_stress_test/gdc_stress_test
+

@@ -15,6 +15,7 @@
 
 #include "vp_wrap.h"
 #include "vp_osd.h"
+#define OSD_MAX_CHANNLE 1
 
 static int region_init(vp_vflow_contex_t *vp_vflow_contex, int width, int height){
 
@@ -26,15 +27,17 @@ static int region_init(vp_vflow_contex_t *vp_vflow_contex, int width, int height
 	region.overlay_attr.size.height = height;
 	region.overlay_attr.pixel_fmt = PIXEL_FORMAT_VGA_8;
 
-    for (int i = 0; i < 6; i++) {
+	SC_LOGI("osd region init %d*%d.", width, height);
+    for (int i = 0; i < OSD_MAX_CHANNLE; i++) {
 		hbn_rgn_handle_t rgn_handle = i;
+		//VSE硬件上最多支持4块OSD，其他多余的OSD通过软件操作图像数据完成。
 		int ret = hbn_rgn_create(rgn_handle, &region);
         if(ret != 0){
             SC_LOGE("osd init region for channel %d failed %d.", i, ret);
             return -1;
         }
 	}
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < OSD_MAX_CHANNLE; i++) {
         hbn_rgn_bitmap_t *bitmap_p = &(vp_vflow_contex->osd_info.bitmap[i]);
 
         int32_t size = width * height;
@@ -63,8 +66,12 @@ static int channel_attr_init(vp_vflow_contex_t *vp_vflow_contex, int x, int y){
 	chn_attr.point.x = x;
 	chn_attr.point.y = y;
 
-	for (int i = 0; i < 6; i++) {
+	for (int i = 0; i < OSD_MAX_CHANNLE; i++) {
 		hbn_rgn_handle_t rgn_handle = i;
+		/*
+			1. region 和 VSE 绑定
+			2. rgn_handle: 函数region_init中初始化中 rgn_handle从0开始
+		*/
 		int ret = hbn_rgn_attach_to_chn(rgn_handle, vse_vnode_fd, i, &chn_attr);
         if(ret != 0){
             SC_LOGE("osd init attr for channel %d vse %d failed, ret: %d:%s", i, vse_vnode_fd, ret, hbn_err_info(ret));
@@ -93,7 +100,7 @@ int32_t vp_osd_init(vp_vflow_contex_t *vp_vflow_contex)
 int32_t vp_osd_deinit(vp_vflow_contex_t *vp_vflow_contex)
 {
     int vse_vnode_fd = vp_vflow_contex->vse_node_handle;
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < OSD_MAX_CHANNLE; i++) {
 		hbn_rgn_handle_t rgn_handle = i;
 		hbn_rgn_detach_from_chn(rgn_handle, vse_vnode_fd, i);
 		hbn_rgn_destroy(rgn_handle);
@@ -145,11 +152,14 @@ int32_t vp_osd_draw_world(vp_vflow_contex_t *vp_vflow_contex, hbn_rgn_handle_t h
 	draw_word.paddr = bitmap_p->paddr;
 	draw_word.size = bitmap_p->size;
 
+	//用户申请好的buffer(malloc)上画字
     int ret = hbn_rgn_draw_word(&draw_word);
     if(ret != 0){
         SC_LOGE("osd draw world for channel %d failed.", osd_index);
         return -1;
     }
+
+	//将bitmap 中的数据，拷贝到物理内存中
     ret = hbn_rgn_setbitmap(handle, bitmap_p);
     if(ret != 0){
         SC_LOGE("osd set bitmap for channel %d failed.", osd_index);

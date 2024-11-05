@@ -9,6 +9,10 @@ typedef struct data_item_s{
 	int is_init_added; //初始化过程中会向 unused队列中添加数据，但是不用归还内存
 	int item_count;
 	void *items;
+	int ref_repay;
+	int ref_obtain;
+	int index;
+	uint64_t update_time_ms;
 }data_item_t;
 
 typedef int(*sync_queue_cb_func_t)(void *, void*);
@@ -30,12 +34,14 @@ typedef struct sync_queue_info_s{
 }sync_queue_info_t;
 
 typedef struct sync_queue_s{
+	int user_count; //inused queue
 	tsQueue ununsed_queue;
 	tsQueue inused_queue;
 
 	sync_queue_info_t sync_queue_info;
 }sync_queue_t;
 
+int sync_queue_add_user(sync_queue_t *sync_queue);
 int sync_queue_create(sync_queue_t *sync_queue, sync_queue_info_t *sync_queue_info);
 
 //for productor

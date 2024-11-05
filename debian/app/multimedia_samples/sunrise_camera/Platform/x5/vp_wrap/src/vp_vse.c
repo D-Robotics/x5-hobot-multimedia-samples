@@ -15,6 +15,7 @@
 
 #include "vp_wrap.h"
 #include "vp_vse.h"
+#define VSE_MAX_CHANNLE 2 //max is 6
 
 int32_t vp_vse_init(vp_vflow_contex_t *vp_vflow_contex)
 {
@@ -37,14 +38,19 @@ int32_t vp_vse_init(vp_vflow_contex_t *vp_vflow_contex)
 	ret = hbn_vnode_set_ichn_attr(*vse_node_handle, ichn_id, &vse_config->vse_ichn_attr);
 	SC_ERR_CON_EQ(ret, 0, "hbn_vnode_set_ichn_attr");
 
-	alloc_attr.buffers_num = 3;
+	if(vse_config->vse_ochn_buffer_count > 0){
+		alloc_attr.buffers_num = vse_config->vse_ochn_buffer_count;
+	}else{
+		alloc_attr.buffers_num = 3;
+	}
+
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
 						| HB_MEM_USAGE_CPU_WRITE_OFTEN
 						| HB_MEM_USAGE_CACHED
 						| HB_MEM_USAGE_GRAPHIC_CONTIGUOUS_BUF;
 
-	for (i = 0; i < 6; i++) {
+	for (i = 0; i < VSE_MAX_CHANNLE; i++) {
 		if (vse_config->vse_ochn_attr[i].chn_en) {
 			ret = hbn_vnode_set_ochn_attr(*vse_node_handle, i, &vse_config->vse_ochn_attr[i]);
 			SC_ERR_CON_EQ(ret, 0, "hbn_vnode_set_ochn_attr");

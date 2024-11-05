@@ -111,7 +111,22 @@ void print_connector_info(int drm_fd) {
 
 	drmModeFreeResources(resources);
 }
+static float __mode_vrefresh(drmModeModeInfo *mode)
+{
+	unsigned int num, den;
 
+	num = mode->clock;
+	den = mode->htotal * mode->vtotal;
+
+	if (mode->flags & DRM_MODE_FLAG_INTERLACE)
+		num *= 2;
+	if (mode->flags & DRM_MODE_FLAG_DBLSCAN)
+		den *= 2;
+	if (mode->vscan > 1)
+		den *= mode->vscan;
+
+	return num * 1000.00 / den;
+}
 static int drm_setup_kms(vp_drm_context_t *ctx)
 {
 
@@ -147,7 +162,12 @@ static int drm_setup_kms(vp_drm_context_t *ctx)
 		if (connector->modes[i].hdisplay == ctx->width && connector->modes[i].vdisplay == ctx->height)
 		{
 			mode = &connector->modes[i];
-			break;
+			float fps = __mode_vrefresh(mode);
+			printf("fps:%f\n", fps);
+			if((fps <= 31.00) && (fps >= 28.00)){
+				printf("select %f\n", fps);
+				break;
+			}
 		}
 	}
 
@@ -299,8 +319,8 @@ static drmModeConnector* find_connector(int fd)
 static void drm_init_config(vp_drm_context_t *drm_ctx, int32_t width, int32_t height)
 {
 	memset(drm_ctx, 0, sizeof(vp_drm_context_t));
-	drm_ctx->crtc_id = 31;
-	drm_ctx->connector_id = 117;
+	drm_ctx->crtc_id = 31;//63; //31
+	drm_ctx->connector_id = 75;
 	drm_ctx->width = width;
 	drm_ctx->height = height;
 
@@ -308,7 +328,7 @@ static void drm_init_config(vp_drm_context_t *drm_ctx, int32_t width, int32_t he
 
 	for (int i = 0; i < drm_ctx->plane_count; i++)
 	{
-		drm_ctx->planes[i].plane_id = 33;
+		drm_ctx->planes[i].plane_id = 33; //64; //33
 		drm_ctx->planes[i].src_w = width;
 		drm_ctx->planes[i].src_h = height;
 		drm_ctx->planes[i].crtc_x = 0;
@@ -630,7 +650,8 @@ static uint32_t get_framebuffer(vp_drm_context_t *drm_ctx,
 
 	if (drm_ctx->buffer_count >= drm_ctx->max_buffers)
 	{
-		printf("Buffer map is full, unable to add new framebuffer\n");
+		printf("Buffer map is full, unable to add new framebuffer %d >= %d\n",
+			drm_ctx->buffer_count, drm_ctx->max_buffers);
 		return 0;
 	}
 
@@ -682,7 +703,24 @@ static uint32_t get_framebuffer(vp_drm_context_t *drm_ctx,
 
 	return fb_id;
 }
+int32_t vp_display_wait_blank(vp_drm_context_t *drm_ctx){
 
+	drmVBlank vbl;
+    memset(&vbl, 0, sizeof(vbl));
+    vbl.request.type = (drmVBlankSeqType)(DRM_VBLANK_RELATIVE);;
+    vbl.request.sequence = 0;
+ 	uint32_t high_crtc = (0 << DRM_VBLANK_HIGH_CRTC_SHIFT);
+	vbl.request.type = (drmVBlankSeqType)(DRM_VBLANK_RELATIVE | (high_crtc & DRM_VBLANK_HIGH_CRTC_MASK) );
+	vbl.request.sequence = 1;
+	//wait next vsync
+	int ret = drmWaitVBlank(drm_ctx->drm_fd, &vbl);
+	if (ret != 0) {
+		printf("drmWaitVBlank failed ret=%d\n", ret);
+		return -1;
+	}
+
+	return 0;
+}
 int32_t vp_display_set_frame(vp_drm_context_t *drm_ctx,
 	hb_mem_graphic_buf_t *image_frame)
 {

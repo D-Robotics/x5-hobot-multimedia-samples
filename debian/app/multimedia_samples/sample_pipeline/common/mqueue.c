@@ -103,6 +103,28 @@ teQueueStatus mQueueEnqueueEx(tsQueue *psQueue, void *pvData)
 	return E_QUEUE_OK;
 }
 
+teQueueStatus mQueueEnqueueExWidhFunc(tsQueue *psQueue, void *pvData,
+	queue_process_func_t process_func_cb, void *handle)
+{
+	pthread_mutex_lock(&psQueue->mutex);
+	while (((psQueue->u32Rear + 1)%psQueue->u32Length) == psQueue->u32Front) {
+		pthread_cond_broadcast(&psQueue->cond_data_available);
+		pthread_mutex_unlock(&psQueue->mutex);
+		return E_QUEUE_ERROR_FULL;
+	}
+	int need_release = 1;
+	if(process_func_cb){
+		need_release = process_func_cb(pvData, handle);
+	}
+	if(need_release){
+		psQueue->apvBuffer[psQueue->u32Rear] = pvData;
+		psQueue->u32Rear = (psQueue->u32Rear+1) % psQueue->u32Length;
+		pthread_cond_broadcast(&psQueue->cond_data_available);
+	}
+
+	pthread_mutex_unlock(&psQueue->mutex);
+	return E_QUEUE_OK;
+}
 
 /*******************************************************************************
 ** 函 数 名  : mQueueDequeue
@@ -178,6 +200,57 @@ teQueueStatus mQueueDequeueTimed(tsQueue *psQueue, uint32_t u32WaitTimeMil, void
 	pthread_mutex_unlock(&psQueue->mutex);
 	return E_QUEUE_OK;
 }
+teQueueStatus mQueueDequeueTimedWidthFunc(tsQueue *psQueue, uint32_t u32WaitTimeMil,
+	void **ppvData, queue_process_func_t process_func_cb, void *handle){
+
+	pthread_mutex_lock(&psQueue->mutex);
+	while (psQueue->u32Front == psQueue->u32Rear){
+		struct timeval sNow;
+		struct timespec sTimeout;
+
+		memset(&sNow, 0, sizeof(struct timeval));
+		gettimeofday(&sNow, NULL);
+		sTimeout.tv_sec = sNow.tv_sec + (u32WaitTimeMil/1000);
+		sTimeout.tv_nsec = (sNow.tv_usec + ((u32WaitTimeMil % 1000) * 1000)) * 1000;
+		if (sTimeout.tv_nsec > 1000000000)
+		{
+			sTimeout.tv_sec++;
+			sTimeout.tv_nsec -= 1000000000;
+		}
+		/*printf("Dequeue timed: now    %lu s, %lu ns\n", sNow.tv_sec, sNow.tv_usec * 1000);*/
+		/*printf("Dequeue timed: until  %lu s, %lu ns\n", sTimeout.tv_sec, sTimeout.tv_nsec);*/
+
+		switch (pthread_cond_timedwait(&psQueue->cond_data_available, &psQueue->mutex, &sTimeout))
+		{
+			case (0):
+				break;
+
+			case (ETIMEDOUT):
+				pthread_mutex_unlock(&psQueue->mutex);
+				return E_QUEUE_ERROR_TIMEOUT;
+				break;
+
+			default:
+				pthread_mutex_unlock(&psQueue->mutex);
+				return E_QUEUE_ERROR_FAILED;
+		}
+	}
+	*ppvData = psQueue->apvBuffer[psQueue->u32Front];
+
+	int need_release = 1;
+	if(process_func_cb){
+		need_release = process_func_cb(*ppvData, handle);
+	}
+
+	if(need_release){
+		psQueue->u32Front = (psQueue->u32Front + 1) % psQueue->u32Length;
+		pthread_cond_broadcast(&psQueue->cond_space_available);
+	}
+
+	pthread_mutex_unlock(&psQueue->mutex);
+	return E_QUEUE_OK;
+}
+
 int mQueueIsEmpty(tsQueue *psQueue){
 	pthread_mutex_lock(&psQueue->mutex);
 	if (psQueue->u32Rear == psQueue->u32Front) {

@@ -111,8 +111,8 @@ typedef struct ws_client_n {
 	int32_t stream_chn[64]; // fShmSource 对应的编码通道号
 	struct ws_client_n *next;
 
-	int codec_type;
-	char *codec_type_string;
+	int codec_type[64];
+	char *codec_type_string[64];
 } ws_client;
 
 typedef struct {

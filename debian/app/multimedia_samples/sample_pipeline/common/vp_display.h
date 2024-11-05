@@ -27,7 +27,7 @@ extern "C" {
 
 
 #define DRM_MAX_PLANES 3
-#define DRM_ION_MAX_BUFFERS 3
+#define DRM_ION_MAX_BUFFERS 6
 
 typedef struct
 {
@@ -72,6 +72,8 @@ int32_t vp_display_init(vp_drm_context_t *drm_ctx, int32_t width, int32_t height
 int32_t vp_display_deinit(vp_drm_context_t *drm_ctx);
 int32_t vp_display_set_frame(vp_drm_context_t *drm_ctx,
 	hb_mem_graphic_buf_t *image_frame);
+
+int32_t vp_display_wait_blank(vp_drm_context_t *drm_ctx);
 
 int32_t vp_display_check_hdmi_is_connected();
 int32_t vp_display_get_max_resolution_if_not_match(int32_t width, int32_t height, int32_t *out_width, int32_t *out_height);

@@ -161,6 +161,7 @@ int read_gdc_config(gdc_info_s *gdc_info, hb_mem_common_buf_t *bin_buf) {
 	ret = hb_mem_alloc_com_buf(file_size, alloc_flags, bin_buf);
 	if (ret != 0 || bin_buf->virt_addr == NULL) {
 		printf("hb_mem_alloc_com_buf for bin failed, ret = %d\n", ret);
+		free(cfg_buf);
 		return -1;
 	}
 
@@ -168,6 +169,7 @@ int read_gdc_config(gdc_info_s *gdc_info, hb_mem_common_buf_t *bin_buf) {
 	ret = hb_mem_flush_buf(bin_buf->fd, offset, file_size);
 	ERR_CON_EQ(ret, 0);
 
+	free(cfg_buf);
 	return ret;
 }
 
@@ -271,6 +273,7 @@ int create_and_run_vflow(gdc_info_s *gdc_info,
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_stop(vflow_fd);
 	ERR_CON_EQ(ret, 0);
+	hbn_vnode_close(gdc_vnode_fd);
 	hbn_vflow_destroy(vflow_fd);
 
 	return ret;

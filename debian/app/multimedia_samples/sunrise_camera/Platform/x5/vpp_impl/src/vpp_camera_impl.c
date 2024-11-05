@@ -39,6 +39,8 @@
 #include "vpp_preparam.h"
 #include "vpp_camera_impl.h"
 
+#define VPP_VSE_OUTBUFFER_COUNT 3
+#define VPP_VSE_OUTBUFFER_RELEASE_COUNT 2
 #define VPP_CAM_MAX_CHANNELS 32
 
 typedef struct
@@ -57,6 +59,7 @@ typedef struct
 	tsQueue			m_vse_to_enc_queue;
 	tsQueue			m_enc_to_vse_queue;
 
+	int vse_buffer_used_count;
 	tsThread		m_bpu_thread;
 } vpp_camera_t;
 
@@ -128,7 +131,7 @@ static void* venc_get_stream_proc(void *ptr)
 	while (privThread->eState == E_THREAD_RUNNING){
 		status = mQueueDequeueTimed(&vpp_camera->m_vse_to_enc_queue, 2000, (void **)&hbn_vnode_image);
 		if(status != E_QUEUE_OK){
-			SC_LOGE("channel %d dequeue from enc_to_vse_queue failed:%d\n", vpp_camera->pipline_id ,status);
+			SC_LOGI("channel %d dequeue from enc_to_vse_queue failed:%d\n", vpp_camera->pipline_id ,status);
 			continue;
 		}
 		dequeue_enc_count++;
@@ -151,13 +154,13 @@ static void* venc_get_stream_proc(void *ptr)
 			}
 			break;
 		}
-
 		// 编码器用完VSE的数据 就释放
 		ret = vp_vse_release_frame(&vpp_camera->vp_vflow_contex, 0, &vse_frame);
 		if (ret != 0) {
 			SC_LOGE("vp_vse_release_frame failed.");
 			break;
 		}
+		vpp_camera->vse_buffer_used_count--;
 
 		// 编码器用完VnodeBuffer,就归还给 VSE
 		while(privThread->eState == E_THREAD_RUNNING){
@@ -179,6 +182,7 @@ static void* venc_get_stream_proc(void *ptr)
 			SC_LOGE("vp_codec_release_output failed.");
 			break;
 		}
+
 	}
 
 	int free_dissociate_count = 0;
@@ -220,21 +224,37 @@ static void* vse_get_stream_proc(void *ptr)
 		time_statistics_at_beginning_of_loop(&time_statistics);
 		status = mQueueDequeueTimed(&vpp_camera->m_enc_to_vse_queue, 2000, (void **)&hbn_vnode_image);
 		if (status != E_QUEUE_OK){
-			SC_LOGW("channel %d dequeue from enc_to_vse_queue failed:%d\n", vpp_camera->pipline_id ,status);
+			SC_LOGI("channel %d dequeue from enc_to_vse_queue failed:%d\n", vpp_camera->pipline_id, status);
 			continue;
 		}
 		dequeue_vse_count++;
 
+		int wait_count = 0;
 		vse_frame.hbn_vnode_image = hbn_vnode_image;
-		ret = vp_vse_get_frame(&vpp_camera->vp_vflow_contex, 0, &vse_frame);
-		if (ret != 0) {
-			// 当线程接收到退出信号时，getframe 接口会立即报超时退出
-			// 所以只有当线程是正常运行状态下的异常才属于真异常
-			if (privThread->eState == E_THREAD_RUNNING) {
-				SC_LOGE("vp_vse_get_frame chn 0 failed(%d).", ret);
+		while(privThread->eState == E_THREAD_RUNNING){
+			ret = vp_vse_get_frame(&vpp_camera->vp_vflow_contex, 0, &vse_frame);
+			if (ret != 0) {
+				wait_count++;
+				// 当线程接收到退出信号时，getframe 接口会立即报超时退出
+				// 所以只有当线程是正常运行状态下的异常才属于真异常
+				if (privThread->eState == E_THREAD_RUNNING) {
+					if(vpp_camera->vse_buffer_used_count > VPP_VSE_OUTBUFFER_COUNT - VPP_VSE_OUTBUFFER_RELEASE_COUNT){
+						SC_LOGI("vp_vse_get_frame chn not geted data(%d), because buffer is not enough, vse used count %d, vse all count %d, wait %d",
+							ret, vpp_camera->vse_buffer_used_count, VPP_VSE_OUTBUFFER_COUNT, wait_count);
+					}else{
+						SC_LOGE("vp_vse_get_frame chn 0 failed(%d), vse used count %d, vse all count %d.",
+							ret, vpp_camera->vse_buffer_used_count, VPP_VSE_OUTBUFFER_COUNT);
+						vp_print_debug_infos_when_error();
+					}
+					continue;
+				}
+			}else{
+				break;
 			}
-			break;
 		}
+
+		vpp_camera->vse_buffer_used_count++;
+
 		while(privThread->eState == E_THREAD_RUNNING){
 			status = mQueueEnqueueEx(&vpp_camera->m_vse_to_enc_queue, hbn_vnode_image);
 			if (status != E_QUEUE_OK){
@@ -293,6 +313,7 @@ static void *send_yuv_to_bpu(void *ptr) {
 			// 所以只有当线程是正常运行状态下的异常才属于真异常
 			if (privThread->eState == E_THREAD_RUNNING) {
 				SC_LOGE("vp_vse_get_frame chn 1 failed(%d).", ret);
+				vp_print_debug_infos_when_error();
 			}
 			break;
 		}
@@ -393,6 +414,8 @@ int32_t vpp_camera_init_param(void)
 		vse_config->vse_ichn_attr.height = input_height;
 		vse_config->vse_ichn_attr.fmt = FRM_FMT_NV12;
 		vse_config->vse_ichn_attr.bit_width = 8;
+
+		vse_config->vse_ochn_buffer_count = VPP_VSE_OUTBUFFER_COUNT;
 
 		// 第一个通道给编码器使用
 		// 设置VSE通道0输出属性，ROI为原图大小，保持原始输入大小
@@ -585,20 +608,19 @@ int32_t vpp_camera_start(void)
 		vp_vflow_contex = &g_vpp_camera[i].vp_vflow_contex;
 
 		//队列的个数根据 vse 输出buffer的个数设置
-		int codec_buffer_count = 6;
-		teQueueStatus status = mQueueCreate(&g_vpp_camera[i].m_vse_to_enc_queue, codec_buffer_count + 1); //必须是加1的
-		if(status != E_QUEUE_OK){
-			SC_LOGE("mqueue create failed %d, for channle:%d.", status, i);
-			continue;
-		}
-		int vse_buffer_count = 6;
-		status = mQueueCreate(&g_vpp_camera[i].m_enc_to_vse_queue, vse_buffer_count + 1);
+		teQueueStatus status = mQueueCreate(&g_vpp_camera[i].m_vse_to_enc_queue, VPP_VSE_OUTBUFFER_COUNT + 1); //必须是加1：mqueue 为了判断空和满的区别，保留了一个item
 		if(status != E_QUEUE_OK){
 			SC_LOGE("mqueue create failed %d, for channle:%d.", status, i);
 			continue;
 		}
 
-		for (size_t j = 0; j < vse_buffer_count; j++){
+		status = mQueueCreate(&g_vpp_camera[i].m_enc_to_vse_queue, VPP_VSE_OUTBUFFER_COUNT + 1); //必须是加1：mqueue 为了判断空和满的区别，保留了一个item
+		if(status != E_QUEUE_OK){
+			SC_LOGE("mqueue create failed %d, for channle:%d.", status, i);
+			continue;
+		}
+
+		for (size_t j = 0; j < VPP_VSE_OUTBUFFER_COUNT; j++){
 			hbn_vnode_image_t *hbn_vnode_image = (hbn_vnode_image_t *)malloc(sizeof(hbn_vnode_image_t));
 			if (hbn_vnode_image == NULL){
 				SC_LOGE("malloc failed\n");

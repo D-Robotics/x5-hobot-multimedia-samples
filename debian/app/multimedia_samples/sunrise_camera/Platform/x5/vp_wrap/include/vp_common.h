@@ -76,6 +76,7 @@ typedef struct {
 } ImageFrame;
 
 typedef struct vse_info_s {
+	int vse_ochn_buffer_count;
 	vse_attr_t vse_attr;
 	vse_ichn_attr_t vse_ichn_attr;
 	vse_ochn_attr_t vse_ochn_attr[6];

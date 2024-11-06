@@ -43,6 +43,7 @@ int32_t vp_vin_init(vp_vflow_contex_t *vp_vflow_contex)
 	}else{
 		vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000; // 24MHz
 		vin_attr_ex.vin_attr_ex_mask = 0x80;
+		vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
 	}
 
 	// 创建pipeline中的vin node
@@ -61,7 +62,6 @@ int32_t vp_vin_init(vp_vflow_contex_t *vp_vflow_contex)
 	vin_ochn_attr->ddr_en = 1;
 	ret = hbn_vnode_set_ochn_attr(*vin_node_handle, chn_id, vin_ochn_attr);
 	SC_ERR_CON_EQ(ret, 0, "hbn_vnode_set_ochn_attr");
-	vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
 	if (vin_attr_ex_mask) {
 		for (uint8_t i = 0; i < VIN_ATTR_EX_INVALID; i ++) {
 			if ((vin_attr_ex_mask & (1 << i)) == 0)

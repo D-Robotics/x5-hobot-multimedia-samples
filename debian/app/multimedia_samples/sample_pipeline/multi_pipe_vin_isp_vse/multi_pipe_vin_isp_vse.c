@@ -437,6 +437,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	int32_t ret = 0;
 	uint32_t chn_id = 0;
 	uint64_t vin_attr_ex_mask = 0;
+	hbn_buf_alloc_attr_t alloc_attr = {0};
 
 	sensor_config = pipe_contex->sensor_config;
 	vin_node_attr = sensor_config->vin_node_attr;
@@ -479,6 +480,15 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 			ERR_CON_EQ(ret, 0);
 		}
 	}
+
+	alloc_attr.buffers_num = 3;
+	alloc_attr.is_contig = 1;
+	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
+						| HB_MEM_USAGE_CPU_WRITE_OFTEN
+						| HB_MEM_USAGE_CACHED;
+	ret = hbn_vnode_set_ochn_buf_attr(*vin_node_handle, chn_id, &alloc_attr);
+	ERR_CON_EQ(ret, 0);
+
 	return 0;
 }
 
@@ -497,6 +507,9 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	isp_ichn_attr = sensor_config->isp_ichn_attr;
 	isp_ochn_attr = sensor_config->isp_ochn_attr;
 	isp_node_handle = &pipe_contex->isp_node_handle;
+
+	isp_attr->input_mode = 2;  // 1: online,  2: offline
+	sensor_config->vin_node_attr->cim_attr.cim_isp_flyby = 0; // 1: online,  0: offline
 
 	ret = hbn_vnode_open(HB_ISP, 0, AUTO_ALLOC_ID, isp_node_handle);
 	ERR_CON_EQ(ret, 0);
@@ -609,7 +622,7 @@ static int create_and_run_vflow(pipe_contex_t *pipe_contex,
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
 							pipe_contex->vin_node_handle,
-							1,
+							0,
 							pipe_contex->isp_node_handle,
 							0);
 	ERR_CON_EQ(ret, 0);
@@ -748,6 +761,8 @@ int main(int argc, char** argv) {
 		printf("\tVse Channel: %d\n", pipeline_info[i].vse_bind_codec_chn);
 		printf("\tEncode type: %s\n", pipeline_info[i].encode_type);
 		printf("\tOutput file: %s\n", pipeline_info[i].output_file);
+		printf("\tSIF cim_isp_flyby: %d\n", pipeline_info[i].pipe_contexts.sensor_config->vin_node_attr->cim_attr.cim_isp_flyby);
+		printf("\tISP input_mode: %d\n", pipeline_info[i].pipe_contexts.sensor_config->isp_attr->input_mode);
 	}
 
 	printf("MIPI host: 0x%x\n", used_mipi_host);

@@ -12,9 +12,15 @@ echo 105000 > /sys/class/thermal/thermal_zone1/trip_point_1_temp
 echo performance > /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
 
 # Start web server
-echo "============= Start Web Server ==============="
-cd "${local_path}"/WebServer || exit 1
-./start_lighttpd.sh || true
+issue=$(cat /etc/issue)
+
+if echo "$issue" | grep -q "Buildroot"; then
+    echo "============= Start Web Server ==============="
+    cd "${local_path}/WebServer" || exit 1
+    ./start_lighttpd.sh || true
+elif echo "$issue" | grep -q "Ubuntu"; then
+    python -m http.server 80 -d "${local_path}/WebServer/sc_lighttpd/webpages" &
+fi
 
 cd "${local_path}"/sunrise_camera/bin || exit 1
 echo "============= Start Sunrise Camera ==============="

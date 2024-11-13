@@ -73,27 +73,10 @@ void vp_free_image_frame(ImageFrame *image_frame)
 // 获取主芯片类型
 static int32_t vp_get_chip_type(char *chip_type)
 {
-	int ret = 0;
-	FILE *stream;
-	char chip_id[16] = {0};
-
-	stream = fopen("/sys/class/socinfo/chip_id", "r");
-	if (!stream) {
-		SC_LOGE("open fail: %s", strerror(errno));
-		return -1;
-	}
-	ret = fread(chip_id, sizeof(char), 9, stream);
-	if (ret != 9) {
-		SC_LOGE("read fail: %s", strerror(errno));
-		fclose(stream);
-		return -1;
-	}
-	fclose(stream);
-
 	// TODO: 先写死，后面有判断方法后再补充正确的逻辑
 	strcpy(chip_type, "X5");
 
-	return ret;
+	return 0;
 }
 
 int32_t vp_get_hard_capability(solution_cfg_t *solution_config)

@@ -249,11 +249,11 @@ static void *ws_push_stream_thread(void *ptr)
 		int ret = 0;
 		// 从共享内存中读取码流数据
 		for (int i = 0; i < ws_clt->stream_count; i++) {
-			if(ws_clt->codec_type == T_SDK_RTSP_VIDEO_TYPE_H264){
+			if(ws_clt->codec_type[i] == T_SDK_RTSP_VIDEO_TYPE_H264){
 				ret |= ws_send_h264_shm_stream_to_wfs(ws_clt, ws_clt->shm_source[i], data[i], &nalu_len[i]);
-			}else if(ws_clt->codec_type == T_SDK_RTSP_VIDEO_TYPE_H265) {
+			}else if(ws_clt->codec_type[i] == T_SDK_RTSP_VIDEO_TYPE_H265) {
 				ret |= ws_send_h265_shm_stream_to_wfs(ws_clt, ws_clt->shm_source[i], data[i], &nalu_len[i]);
-			}else if(ws_clt->codec_type == T_SDK_RTSP_VIDEO_TYPE_MJPEG){
+			}else if(ws_clt->codec_type[i] == T_SDK_RTSP_VIDEO_TYPE_MJPEG){
 				ret |= ws_send_mjpeg_shm_stream_to_wfs(ws_clt, ws_clt->shm_source[i], data[i], &nalu_len[i]);
 			}else{
 				//do no nothing;
@@ -316,17 +316,17 @@ static int _do_start_stream(ws_client *ws_clt)
 									(type == 26) ? "jpeg" : "other"), venc_chn_info.channel);
 
 		if (type == 96){
-			ws_clt->codec_type = T_SDK_RTSP_VIDEO_TYPE_H264;
-			ws_clt->codec_type_string = "h264";
+			ws_clt->codec_type[i] = T_SDK_RTSP_VIDEO_TYPE_H264;
+			ws_clt->codec_type_string[i] = "h264";
 		}else if(type == 265){
-			ws_clt->codec_type = T_SDK_RTSP_VIDEO_TYPE_H265;
-			ws_clt->codec_type_string = "h265";
+			ws_clt->codec_type[i] = T_SDK_RTSP_VIDEO_TYPE_H265;
+			ws_clt->codec_type_string[i] = "h265";
 		}else if(type == 26){
-			ws_clt->codec_type = T_SDK_RTSP_VIDEO_TYPE_MJPEG;
-			ws_clt->codec_type_string = "jpeg";
+			ws_clt->codec_type[i] = T_SDK_RTSP_VIDEO_TYPE_MJPEG;
+			ws_clt->codec_type_string[i] = "jpeg";
 		}else{
-			ws_clt->codec_type_string = "h264";
-			ws_clt->codec_type = T_SDK_RTSP_VIDEO_TYPE_H264;
+			ws_clt->codec_type_string[i] = "h264";
+			ws_clt->codec_type[i] = T_SDK_RTSP_VIDEO_TYPE_H264;
 			SC_LOGE("not support codec type [%d], so use default type :h264.", type);
 		}
 

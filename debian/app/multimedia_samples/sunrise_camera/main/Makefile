@@ -74,7 +74,7 @@ all : $(TARGET) install
 
 $(TARGET) : $(OBJ)
 	$(LINK) $@ $^ $(LIBRARY_LINK_OPTS)
-install:
+install: $(TARGET)
 	-mkdir -p $(GLOBAL_INSTALL_DIR)/bin
 	#$(STRIP) $(TARGET)
 	mv $(TARGET) $(GLOBAL_INSTALL_DIR)/bin

@@ -485,7 +485,6 @@ static int32_t h265_parse_profile(const char *str_profile, H265Profile *h265_pro
 	return 0;
 }
 
-
 static int32_t get_rc_params(media_codec_context_t *context,
 			mc_rate_control_params_t *rc_params) {
 	int32_t ret = 0;
@@ -672,7 +671,7 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 	case MEDIA_CODEC_ID_JPEG:
 		context->codec_id = MEDIA_CODEC_ID_JPEG;
 		params->jpeg_enc_config.quality_factor = 50;
-		params->mjpeg_enc_config.restart_interval = width / 16;
+		params->jpeg_enc_config.restart_interval = width / 16;
 		params->bitstream_buf_size = (width * height * 3 / 2  + 0xfff) & ~0xfff;
 		break;
 	default:
@@ -736,34 +735,22 @@ int32_t vp_decode_config_param(media_codec_context_t *context, media_codec_id_t 
 
 static int32_t read_nv12_file(char *addr0, char *addr1, FILE *fd, uint32_t y_size)
 {
-	char *buffer = NULL;
 	if (fd == NULL || addr0 == NULL || addr1 == NULL || y_size == 0) {
 		printf("ERR(%s):null param.\n", __func__);
 		return -1;
 	}
 
-	buffer = (char *)malloc(y_size + y_size / 2);
-
-	if (fread(buffer, 1, y_size, fd) != y_size) {
-		if (buffer)
-			free(buffer);
+	if (fread(addr0, 1, y_size, fd) != y_size) {
 		return -1;
 	}
 
-	if (fread(buffer + y_size, 1, y_size / 2, fd) != y_size / 2) {
-		if (buffer)
-			free(buffer);
+	if (fread(addr1, 1, y_size / 2, fd) != y_size / 2) {
 		return -1;
 	}
-
-	memcpy(addr0, buffer, y_size);
-	memcpy(addr1, buffer + y_size, y_size / 2);
-
-	if (buffer)
-		free(buffer);
 
 	return 0;
 }
+
 static void on_encode_input_buffer_consumed(hb_ptr userdata, media_codec_buffer_t *inputBuffer)
 {
 	hb_mem_graphic_buf_t *buffer;
@@ -787,10 +774,10 @@ static int32_t read_input_frame(media_codec_buffer_t *input_buffer, FILE *fd)
 {
 	hb_mem_graphic_buf_t *buffer;
 	int64_t flags;
-	uint32_t y_size;
 	int32_t width, height;
 	uint8_t *y_data;
 	uint8_t *uv_data;
+	uint64_t y_size, uv_size;
 	int32_t ret;
 
 	if (fd == NULL || input_buffer == NULL) {
@@ -800,12 +787,11 @@ static int32_t read_input_frame(media_codec_buffer_t *input_buffer, FILE *fd)
 
 	width = input_buffer->vframe_buf.width;
 	height = input_buffer->vframe_buf.height;
-	y_size = input_buffer->vframe_buf.width * input_buffer->vframe_buf.height;
 
 	buffer = malloc(sizeof(hb_mem_graphic_buf_t));
 	memset(buffer, 0, sizeof(hb_mem_graphic_buf_t));
 
-	flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
+	flags = HB_MEM_USAGE_MAP_INITIALIZED | HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
 	ret = hb_mem_alloc_graph_buf(width, height, MEM_PIX_FMT_NV12, flags, 0, 0, buffer);
 	if (ret < 0) {
 		printf("hb_mem_alloc_graph_buf ret %d failed \n", ret);
@@ -814,10 +800,12 @@ static int32_t read_input_frame(media_codec_buffer_t *input_buffer, FILE *fd)
 
 	y_data = buffer->virt_addr[0];
 	uv_data = buffer->virt_addr[1];
+	y_size = buffer->size[0];
+	uv_size = buffer->size[1];
 
 #if 0
-	printf("hb_mem alloc. y_data(%p), uv_data(%p), y_size(%d), size[0]: %lu, size[1]: %lu\n",
-			y_data, uv_data, y_size, buffer->size[0], buffer->size[1]);
+	printf("hb_mem alloc. y_data(%p), uv_data(%p), y_size(%lu), uv_size(%lu)\n",
+			y_data, uv_data, y_size, uv_size);
 #endif
 
 	if (fread(y_data, 1, y_size, fd) != y_size) {
@@ -826,7 +814,7 @@ static int32_t read_input_frame(media_codec_buffer_t *input_buffer, FILE *fd)
 		return -1;
 	}
 
-	if (fread(uv_data, 1, y_size / 2, fd) != y_size / 2) {
+	if (fread(uv_data, 1, uv_size, fd) != uv_size) {
 		hb_mem_free_buf(buffer->fd[0]);
 		free(buffer);
 		return -1;
@@ -839,6 +827,15 @@ static int32_t read_input_frame(media_codec_buffer_t *input_buffer, FILE *fd)
 
 	/* set external buffer ptr to user_ptr, using on_input_buffer_consumed to release it */
 	input_buffer->user_ptr = buffer;
+
+	/* Flush Cache Before VPU/JPU DMA access */
+	ret = hb_mem_flush_buf_with_vaddr((uint64_t)y_data, y_size);
+	if (ret < 0)
+		printf("cache flush failed. y_data(%p), y_size(%lu)\n", y_data, y_size);
+
+	ret = hb_mem_flush_buf_with_vaddr((uint64_t)uv_data, uv_size);
+	if (ret < 0)
+		printf("cache flush failed. uv_data(%p), uv_size(%lu)\n", uv_data, uv_size);
 
 	return 0;
 }

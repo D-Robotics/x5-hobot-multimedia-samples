@@ -30,6 +30,7 @@ int32_t vp_get_hard_capability(solution_cfg_t *solution_config);
 void vp_print_debug_infos(void);
 
 void vp_normal_buf_info_print(ImageFrame *frame);
+void vp_print_debug_infos_when_error(void);
 
 int32_t vp_dump_nv12_to_file(char *filename, uint8_t *data_y, uint8_t *data_uv,
 		int width, int height);

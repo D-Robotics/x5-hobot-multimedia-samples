@@ -139,6 +139,9 @@ static int32_t prepare_output_tensor(hbDNNTensor *output_tensor,
 			"hbDNNGetOutputTensorProperties failed");
 	HB_CHECK_SUCCESS(hbSysAllocCachedMem(&output[i].sysMem[0], output[i].properties.alignedByteSize),
 			"hbSysAllocCachedMem failed");
+	SC_LOGI("model output tensor [%d] output_count: %d, size: %d\n", i,
+		output_count, output[i].properties.alignedByteSize);
+
 	}
 
   return ret;
@@ -166,7 +169,7 @@ static void *post_process_yolov5s(void *ptr)
 	bpu_handle_t *bpu_handle = (bpu_handle_t *)privThread->pvThreadData;
 	while (privThread->eState == E_THREAD_RUNNING) {
 		if (mQueueDequeueTimed(&bpu_handle->m_output_queue, 100, (void**)&post_info) != E_QUEUE_OK){
-			SC_LOGI("post_process_yolov5s wait queue time out.");
+			// SC_LOGI("post_process_yolov5s wait queue time out.");
 			continue;
 		}
 
@@ -289,8 +292,8 @@ static void *inference_yolov5s(void *ptr)
 
 		// 如果后处理队列满的，直接返回
 		if (mQueueIsFull(&bpu_handle->m_output_queue)) {
-			SC_LOGI("post process queue full, skip it, queue length is %d",
-				bpu_handle->m_output_queue.u32Length);
+			// SC_LOGI("post process queue full, skip it, queue length is %d",
+			// 	bpu_handle->m_output_queue.u32Length);
 			cur_ouput_buf_idx++;
 			cur_ouput_buf_idx %= 5;
 			continue;
@@ -875,7 +878,7 @@ int32_t bpu_wrap_send_frame(bpu_handle_t *handle, bpu_buffer_info_t *input_buffe
 
 	// 如果队列满的，直接返回
 	if (mQueueIsFull(&handle->m_input_queue)) {
-		SC_LOGW("input queue full, skip it");
+		// SC_LOGW("input queue full, skip it");
 		return 0;
 	}
 

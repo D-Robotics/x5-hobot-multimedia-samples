@@ -143,6 +143,7 @@ void vp_vin_print_hbn_vnode_image_t(const hbn_vnode_image_t *frame)
 void vp_vin_print_hbn_frame_info_t(const hbn_frame_info_t *frame_info) {
 	printf("Frame ID: %u\n", frame_info->frame_id);
 	printf("Timestamps: %lu\n", frame_info->timestamps);
+	printf("Systimestamps: %lu\n", frame_info->sys_timestamps);
 	printf("tv: %ld.%06ld\n", frame_info->tv.tv_sec, frame_info->tv.tv_usec);
 	printf("trig_tv: %ld.%06ld\n", frame_info->trig_tv.tv_sec, frame_info->trig_tv.tv_usec);
 	printf("Frame Done: %u\n", frame_info->frame_done);
@@ -219,7 +220,7 @@ int create_and_run_vflow(scaler_info_s *scaler_info, hbn_vnode_image_t *input_im
 	input_height = scaler_info->input_height;
 
 	printf("ichn input width = %d\n", input_width);
-	printf("ichn input input_height = %d\n", input_height);
+	printf("ichn input height = %d\n", input_height);
 
 	vse_ichn_attr.width = input_width;
 	vse_ichn_attr.height = input_height;
@@ -330,6 +331,7 @@ int create_and_run_vflow(scaler_info_s *scaler_info, hbn_vnode_image_t *input_im
 
 	ret = hbn_vflow_stop(vflow_fd);
 	ERR_CON_EQ(ret, 0);
+	hbn_vnode_close(vnode_fd);
 	hbn_vflow_destroy(vflow_fd);
 
 	return ret;

@@ -73,27 +73,10 @@ void vp_free_image_frame(ImageFrame *image_frame)
 // 获取主芯片类型
 static int32_t vp_get_chip_type(char *chip_type)
 {
-	int ret = 0;
-	FILE *stream;
-	char chip_id[16] = {0};
-
-	stream = fopen("/sys/class/socinfo/chip_id", "r");
-	if (!stream) {
-		SC_LOGE("open fail: %s", strerror(errno));
-		return -1;
-	}
-	ret = fread(chip_id, sizeof(char), 9, stream);
-	if (ret != 9) {
-		SC_LOGE("read fail: %s", strerror(errno));
-		fclose(stream);
-		return -1;
-	}
-	fclose(stream);
-
 	// TODO: 先写死，后面有判断方法后再补充正确的逻辑
 	strcpy(chip_type, "X5");
 
-	return ret;
+	return 0;
 }
 
 int32_t vp_get_hard_capability(solution_cfg_t *solution_config)
@@ -129,6 +112,7 @@ void vp_print_debug_infos(void)
 
 	printf("======================= Buffer =========================\n");
 	print_file("/sys/devices/virtual/vps/flow/fmgr_stats");
+	print_file("/sys/class/vps/flow/fmgr_stats");
 
 	if (log_ctrl_level_get(NULL) == LOG_DEBUG) {
 		printf("========================= ION ==========================\n");
@@ -138,7 +122,17 @@ void vp_print_debug_infos(void)
 	}
 	printf("========================= END ===========================\n");
 }
+void vp_print_debug_infos_when_error(void)
+{
+	print_file("/sys/class/vps/flow/fmgr_stats");
+	print_file("/proc/interrupts");
 
+	printf("sleep 5\n");
+	sleep(5);
+	print_file("/sys/class/vps/flow/fmgr_stats");
+	print_file("/proc/interrupts");
+
+}
 void vp_normal_buf_info_print(ImageFrame *frame)
 {
 }
@@ -263,6 +257,7 @@ void vp_vin_print_hbn_vnode_image_t(const hbn_vnode_image_t *frame)
 void vp_vin_print_hbn_frame_info_t(const hbn_frame_info_t *frame_info) {
 	printf("Frame ID: %u\n", frame_info->frame_id);
 	printf("Timestamps: %lu\n", frame_info->timestamps);
+	printf("Systimestamps: %lu\n", frame_info->sys_timestamps);
 	printf("tv: %ld.%06ld\n", frame_info->tv.tv_sec, frame_info->tv.tv_usec);
 	printf("trig_tv: %ld.%06ld\n", frame_info->trig_tv.tv_sec, frame_info->trig_tv.tv_usec);
 	printf("Frame Done: %u\n", frame_info->frame_done);

@@ -7,7 +7,9 @@ static int is_number(const char *str) {
 	return 1;
 }
 
-int check_camera_config(param_config_t *param_config){
+int check_camera_config(param_config_t *param_config, int *pipe_contex_need_vse, int *enable_isp_online){
+
+	printf("\n\n Show VSE info:\n");
 
 	//VSE放大： 最大分辨率是4K，放大倍数最大是4倍
 	int quarter_of_vse_max_resolution = 3840 *2160 / 4;
@@ -22,6 +24,20 @@ int check_camera_config(param_config_t *param_config){
 					camera_name_tmp, width_tmp, height_tmp);
 			return -1;
 		}
+		if((width_tmp == 3840) && (height_tmp == 2160)){
+			pipe_contex_need_vse[i] = 0;
+		}else{
+			pipe_contex_need_vse[i] = 1;
+		}
+		printf("\t [%d] need vse :%d\n", i, pipe_contex_need_vse[i]);
+	}
+
+	*enable_isp_online = 1;
+	for(int i = 0; i < param_config->sensor_config_count; i++){
+		if(pipe_contex_need_vse[i] == 0){
+			*enable_isp_online = 0;
+			break;
+		}
 	}
 	return 0;
 }
@@ -35,6 +51,8 @@ static void print_help(void) {
 	printf("-o, --output=\"file or hdmi, default is file\n");
 	printf("-r, --ratio=\"camera image width ratio, used to blend, default is 0.0\n");
 	printf("-g, --gdc_enable\tEnable gdc, default is disable\n");
+	printf("-b, --bpu_enable\tEnable bpu, default is disable\n");
+	printf("-p, --bpu_postprocess_enable\tEnable bpu postprocess, default is disable\n");
 	printf("-v, --verbose\tEnable verbose mode\n");
 	printf("-h, --help\tShow help message\n");
 
@@ -160,6 +178,7 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 		{"ratio", no_argument, NULL, 'r'},
 		{"output", no_argument, NULL, 'o'},
 		{"gdc_enable", no_argument, NULL, 'g'},
+		{"bpu_enable", no_argument, NULL, 'b'},
 		{"verbose", no_argument, NULL, 'v'},
 		{"help", no_argument, NULL, 'h'},
 		{NULL, 0, NULL, 0}
@@ -170,10 +189,13 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 	param_config->output_file_name = "output.h265";
 	param_config->blend_ratio = 0.0;
 	param_config->gdc_enable = 0;
+	param_config->bpu_enable = 0;
+	param_config->bpu_postporcess_enable = 0;
+	param_config->verbose_flag = 0;
 
 	int c = 0;
 	int32_t total_pipeline_num = 0;
-	while ((c = getopt_long(argc, argv, "c:r:o:gvh", long_options, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "c:r:o:pbgvh", long_options, NULL)) != -1) {
 		switch (c) {
 		case 'c':
 			if (total_pipeline_num >= MAX_PIPE_NUM) {
@@ -207,6 +229,14 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 		case 'g':
 			param_config->gdc_enable = 1;
 			break;
+
+		case 'b':
+			param_config->bpu_enable = 1;
+			break;
+		case 'p':
+			param_config->bpu_postporcess_enable = 1;
+			break;
+
 		case 'h':
 		default:
 			print_help();
@@ -230,7 +260,17 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 	// 处理后的参数在这里可以使用
 	printf("\n\n Show sensor info:\n");
 	for (int i = 0; i < param_config->sensor_config_count; i++) {
-		param_config->sensor_param_config[i].vse_bind_n2d_chn = 5; 					//vse resize to 4K
+
+		vp_sensor_config_t* sensor_config = param_config->sensor_param_config[i].sensor_config;
+		int width_tmp = sensor_config->camera_config->width;
+		int height_tmp = sensor_config->camera_config->height;
+		int input_size = width_tmp * height_tmp;
+
+		if(input_size < 3840 * 2160){
+			param_config->sensor_param_config[i].vse_bind_n2d_chn = 5; 					//vse resize to 4K
+		}else{
+			param_config->sensor_param_config[i].vse_bind_n2d_chn = 0;
+		}
 
 		printf("  Pipeline index %d:\n", i);
 		printf("\tSensor index: %d\n", param_config->sensor_param_config[i].select_sensor_id);
@@ -239,12 +279,20 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 		printf("\tVse Channel: %d\n", param_config->sensor_param_config[i].vse_bind_n2d_chn);
 		printf("\tGDC Enable: %d\n", param_config->gdc_enable);
 	}
+	printf("\n\n blend info: %f\n", param_config->blend_ratio);
+	printf("\n\n BPU info\n");
+
+	printf("\tenable: %d\n", param_config->bpu_enable);
+	printf("\tpost process enable: %d\n", param_config->bpu_postporcess_enable);
+
+	printf("\n\n enable print debug info: %d\n", param_config->verbose_flag);
 
 	printf("\n\n Show output info:\n");
 	printf("\t Output Form: %s\n", param_config->output);
 	if(strcmp(param_config->output, "file") == 0){
 		printf("\t Output filename:%s\n", param_config->output_file_name);
 	}
+
 	printf("\n\n");
 
 	return 0;

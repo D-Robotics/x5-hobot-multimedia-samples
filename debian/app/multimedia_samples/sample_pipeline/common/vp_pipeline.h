@@ -6,11 +6,17 @@
 #include <stdio.h>
 #include <string.h>
 #include "common_utils.h"
+
+#define PILELINE_OUT_BUFFER_COUNT 5
+#define PILELINE_OUT_BUFFER_RELEASE_COUNT 2
 typedef struct vp_pipeline_info_s {
+	int channel;
     int active_mipi_host;
     int vse_bind_index;
     int sensor_mode;
 	int enable_gdc;
+	int enable_vse;
+	int enable_online;
 	char *sensor_name;
     camera_config_info_t camera_config_info;
 }vp_pipeline_info_t;
@@ -27,6 +33,7 @@ typedef struct vp_vse_feedback_pipeline_info_s {
 	int output_width;
 	int output_height;
 	int vse_channel;
+	int pipeline_id;
 }vp_vse_feedback_pipeline_info_t;
 int vp_create_stop_vse_feedback_pieline(pipe_contex_t *pipe_contex);
 int vp_create_start_vse_feedback_pieline(pipe_contex_t *pipe_contex, vp_vse_feedback_pipeline_info_t *pipeline_info);

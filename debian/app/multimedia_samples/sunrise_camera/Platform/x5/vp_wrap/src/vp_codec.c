@@ -716,7 +716,8 @@ int32_t vp_codec_encoder_set_input(media_codec_context_t *context, ImageFrame *v
 	buffer.vframe_buf.height = context->video_enc_params.height;
 	buffer.vframe_buf.pix_fmt = MC_PIXEL_FORMAT_NV12;
 	buffer.vframe_buf.size = data_size;
-	buffer.vframe_buf.pts = hbn_vnode_image->info.timestamps / 1000;;
+	//timestamps的单位是纳秒， 转换为 微妙
+	buffer.vframe_buf.pts = hbn_vnode_image->info.timestamps / 1000;
 	if(context->video_enc_params.external_frame_buf){
 		buffer.vframe_buf.vir_ptr[0] = hbn_vnode_image->buffer.virt_addr[0];
 		buffer.vframe_buf.vir_ptr[1] = hbn_vnode_image->buffer.virt_addr[1];

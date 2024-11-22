@@ -486,7 +486,9 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
 						| HB_MEM_USAGE_CPU_WRITE_OFTEN
 						| HB_MEM_USAGE_CACHED;
+
 	ret = hbn_vnode_set_ochn_buf_attr(*vin_node_handle, ochn_id, &alloc_attr);
+
 	ERR_CON_EQ(ret, 0);
 
 	return 0;

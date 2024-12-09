@@ -34,6 +34,7 @@
 #define VPP_DISPLAY_MASK 0xfffffffe
 
 #define VP_GET_FRAME_TIMEOUT 2000
+#define VP_DECODER_GET_FRAME_TIMEOUT 4000
 
 /**
  * Align by 16

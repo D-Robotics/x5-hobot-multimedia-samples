@@ -162,6 +162,16 @@ n2d_error_t create_n2d_buffer_and_copy_sample()
 		printf("hb_mem_alloc_graph_buf failed :%d\n", ret);
 		goto on_free_src_hbm;
 	}
+	ret = hb_mem_flush_buf_with_vaddr((uint64_t)hbn_mem_src.virt_addr[0], hbn_mem_src.size[0]);
+	if(ret != 0){
+		printf("hb_mem_flush_buf_with_vaddr failed :%d\n", ret);
+		goto on_free_src_hbm;
+	}
+	ret = hb_mem_flush_buf_with_vaddr((uint64_t)hbn_mem_src.virt_addr[1], hbn_mem_src.size[1]);
+	if(ret != 0){
+		printf("hb_mem_flush_buf_with_vaddr failed :%d\n", ret);
+		goto on_free_src_hbm;
+	}
 
 	error = create_n2d_buffer_from_hbm_graphic(&src, &hbn_mem_src);
 	if (N2D_IS_ERROR(error)){
@@ -216,6 +226,17 @@ n2d_error_t create_n2d_buffer_and_copy_sample()
 
 	memset(output_file_name, 0, sizeof(output_file_name));
 	sprintf(output_file_name, "./create_n2d_buffer_copy_sample_hbn_%d_%d.yuv", dst.width, dst.height);
+	ret = hb_mem_invalidate_buf_with_vaddr((uint64_t)hbn_mem_dst.virt_addr[0], hbn_mem_dst.size[0]);
+	if(ret != 0){
+		printf("hb mem invvalidate failed.\n");
+		goto on_error;
+	}
+	ret = hb_mem_invalidate_buf_with_vaddr((uint64_t)hbn_mem_dst.virt_addr[1], hbn_mem_dst.size[1]);
+	if(ret != 0){
+		printf("hb mem invvalidate failed.\n");
+		goto on_error;
+	}
+
 	ret = dump_image_to_file(output_file_name, hbn_mem_dst.virt_addr[0], dst.width*dst.height*1.5);
 	if(ret != 0){
 		printf("save file %s failed.\n", output_file_name);

@@ -3,8 +3,9 @@
 #include "mqueue.h"
 #include "mthread.h"
 #include "dnn/hb_dnn.h"
+#include "bpu_common.h"
 
-typedef int (*bpu_post_process_callback)(char* result, void *userdata);
+typedef int (*bpu_post_process_callback)(detect_object_array_t* result, void *userdata);
 
 // 模型推理函数的原型
 typedef void *(*inference_function)(void *);

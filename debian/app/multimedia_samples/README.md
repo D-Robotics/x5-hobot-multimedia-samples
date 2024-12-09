@@ -117,3 +117,18 @@ single_pipe_vin_isp_vse示例串联VIN、ISP、VSE三个模块，是最基础的
 	2. single_pipe_vin_isp_vse -s/--sensor sensor_index 选择对应的sensor_index号运行示例
 
 当前示例每个60帧保存一张个输出通道的NV12图至当前运行目录下。
+
+
+#### sample_custom_capbuf
+
+sample_custom_capbuf示例用户自定义VSE或GDC的输出buf内存。
+
+使用方式：
+	./run_test.sh 先跑自定义输出buf，再跑内部申请输出buf，处理完打印处理耗时
+	环境变量 CAP_LOOP_CNT 控制回灌VSE，GDC的循环次数
+	环境变量 CAP_BUF_FLAG 控制回灌VSE，GDC的输出buf是用户自定义还是内部申请
+	环境变量 CAP_DUMP_FLAG 控制是否保存输出yuv图
+
+注意事项：
+	1. 只支持VSE，GDC和GDC绑定VSE的回灌模式
+	2. 用户自定义的输出buf，需Y和UV地址空间要连续，需使用ION空间，需填充必要bufferindex和share_id

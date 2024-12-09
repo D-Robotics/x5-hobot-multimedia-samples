@@ -221,6 +221,14 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	vin_ochn_attr = sensor_config->vin_ochn_attr;
 	// 调整 mipi_rx 的 index
 	vin_node_attr->cim_attr.mipi_rx = active_mipi_host;
+	vin_node_attr->cim_attr.func.enable_frame_id = 1;
+	vin_node_attr->cim_attr.func.set_init_frame_id = 1;
+
+	vin_node_attr->cim_attr.func.time_stamp_en = 1;
+	vin_node_attr->cim_attr.func.time_stamp_mode = 3;
+	vin_node_attr->cim_attr.func.ts_src = 1;
+	vin_node_attr->cim_attr.func.pps_src = 6;
+
 	hw_id = vin_node_attr->cim_attr.mipi_rx;
 	vin_node_handle = &pipe_contex->vin_node_handle;
 
@@ -229,9 +237,8 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
 			pipe_contex->csi_config.index);
 	}else{
-		vin_attr_ex.vin_attr_ex_mask = 0x80;	//bit7 for mclk
-		vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000; // 24MHz
-		vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
+		vin_attr_ex.vin_attr_ex_mask = sensor_config->vin_attr_ex->vin_attr_ex_mask;
+		vin_attr_ex.mclk_ex_attr.mclk_freq = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
 	}
 
 	ret = hbn_vnode_open(HB_VIN, hw_id, AUTO_ALLOC_ID, vin_node_handle);
@@ -248,6 +255,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	vin_ochn_attr->ddr_en = 1;
 	ret = hbn_vnode_set_ochn_attr(*vin_node_handle, chn_id, vin_ochn_attr);
 	ERR_CON_EQ(ret, 0);
+	vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
 	if (vin_attr_ex_mask) {
 		for (uint8_t i = 0; i < VIN_ATTR_EX_INVALID; i ++) {
 			if ((vin_attr_ex_mask & (1 << i)) == 0)
@@ -258,7 +266,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 			ERR_CON_EQ(ret, 0);
 		}
 	}
-	alloc_attr.buffers_num = PILELINE_OUT_BUFFER_COUNT;
+	alloc_attr.buffers_num = 3;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
 						| HB_MEM_USAGE_CPU_WRITE_OFTEN

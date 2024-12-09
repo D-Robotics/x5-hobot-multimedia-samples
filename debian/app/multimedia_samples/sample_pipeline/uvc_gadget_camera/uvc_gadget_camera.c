@@ -17,11 +17,19 @@
 #include "vp_codec.h"
 #include "vp_pipeline.h"
 #include "uvc_gadget_wraper.h"
+
+#include "uac_gadget.h"
+
+/* UAC */
+static uac_gadget_contex_t g_uac_gadget_contex = {0};
+
+/* UVC */
 enum pipeline_thread_state_t{
 	E_THREAD_STOPPED,
 	E_THREAD_RUNNING,
 	E_THREAD_STOPPING,
 };
+
 typedef struct uvc_gadget_camera_contex_s
 {
 	camera_config_info_t camera_config_info;
@@ -61,6 +69,8 @@ static void print_help()
 	printf("Options:\n");
 	printf("  -s <sensor_index>      Specify sensor index\n");
 	printf("  -m <sensor_mode>       Specify sensor mode of camera_config_t\n");
+	printf("  -p <play PCM file>     Specifies the audio playback file path\n");
+	printf("  -r <record PCM file>   Specify the audio recording file path\n");
 	printf("  -h                     Show this help message\n");
 	vp_show_sensors_list(); // Assuming this function displays sensor list
 }
@@ -245,6 +255,7 @@ static void pipeline_process_stop(uvc_gadget_camera_contex_t *uvc_gadget_camera_
 	vp_codec_encoder_destroy_and_stop(encode_context);
 	printf("pipeline thread stoped.\n");
 }
+
 int uvc_get_frame_cb_func(struct uvc_context *ctx,
 						  void **buf_to, int *buf_len,
 						  void **entity, void *userdata){
@@ -264,6 +275,7 @@ int uvc_get_frame_cb_func(struct uvc_context *ctx,
 	*entity = ouput_buffer_ptr;
 	return 0;
 }
+
 void uvc_release_frame_cb_func(struct uvc_context *ctx,
 							   void **entity, void *userdata){
 	if (!ctx || !entity || !(*entity))
@@ -288,6 +300,7 @@ void uvc_streamon_on_or_off(struct uvc_context *ctx, int is_on, void *userdata){
 
 	struct uvc_device *dev = ctx->udev;
 	uvc_gadget_camera_contex_t *uvc_gadget_camera_contex = (uvc_gadget_camera_contex_t *)userdata;
+	uac_gadget_contex_t *uac_gadget_contex = (uac_gadget_contex_t *)&g_uac_gadget_contex;
 
 	int width = uvc_gadget_camera_contex->sensor_config->camera_config->width;
 	int height = uvc_gadget_camera_contex->sensor_config->camera_config->height;
@@ -325,9 +338,15 @@ void uvc_streamon_on_or_off(struct uvc_context *ctx, int is_on, void *userdata){
 		printf("\n\n## uvc camera on(%d)## %s(%ux%u) fps:%d.\n", is_on, fcc_to_string(dev->fcc),
 			dev->width, dev->height, camera_config_info.fps);
 		pipeline_process_start(uvc_gadget_camera_contex, &camera_config_info);
+
+		uac_stream_on_or_off(uac_gadget_contex, is_on);
+		printf("\n\n## uac camera on(%d)##\n", is_on);
 	}else{
 		printf("\n\n## uvc camera off(%d)## %s(%ux%u)\n", is_on, fcc_to_string(dev->fcc), dev->width, dev->height);
 		pipeline_process_stop(uvc_gadget_camera_contex);
+
+		uac_stream_on_or_off(uac_gadget_contex, is_on);
+		printf("\n\n## uac camera off(%d)##\n", is_on);
 	}
 }
 
@@ -340,7 +359,8 @@ int main(int argc, char *argv[])
 	int settle = -1;
 	int opt_index = 0;
 	int sensor_mode = 0;
-	while ((c = getopt_long(argc, argv, "s:m:h",
+
+	while ((c = getopt_long(argc, argv, "s:m:p:r:h",
 							long_options, &opt_index)) != -1){
 		switch (c){
 		case 's':
@@ -348,6 +368,16 @@ int main(int argc, char *argv[])
 			break;
 		case 'm':
 			sensor_mode = atoi(optarg);
+			break;
+		case 'p':
+			g_uac_gadget_contex.uac_mask |= UAC_MICPHONE_MASK;
+			g_uac_gadget_contex.micphone_test_type = E_UAC_TEST_FILE;
+			strcpy(g_uac_gadget_contex.uac_play_file, optarg);
+			break;
+		case 'r':
+			g_uac_gadget_contex.uac_mask |= UAC_SPEAKER_MASK;
+			g_uac_gadget_contex.speaker_test_type = E_UAC_TEST_FILE;
+			strcpy(g_uac_gadget_contex.uac_record_file, optarg);
 			break;
 		case 'h':
 		default:
@@ -405,11 +435,21 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
+	//4. uac init
+	ret = uac_gadget_contex_init(&g_uac_gadget_contex);
+	if (ret != 0) {
+		printf("uac gadget contex init failed, skip uac test !!!!!!! \n");
+	}
+
 	printf("'q' for exit\n");
 	while (getchar() != 'q');
 
-	//4. destroy uvc dadget
+	//4. destroy uvc gadget
 	uvc_gadget_destroy_and_stop(g_uvc_gadget_camera_contex.uvc_contex);
 	hb_mem_module_close();
+
+	//5. destroy uac gadget
+	uac_gadget_destroy_and_stop(&g_uac_gadget_contex);
+
 	return 0;
 }

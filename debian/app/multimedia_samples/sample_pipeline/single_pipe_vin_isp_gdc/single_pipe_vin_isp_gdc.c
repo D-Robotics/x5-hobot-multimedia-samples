@@ -95,9 +95,8 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
 			pipe_contex->csi_config.index);
 	}else{
-		vin_attr_ex.vin_attr_ex_mask = 0x80;	//bit7 for mclk
-		vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000; // 24MHz
-		vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
+		vin_attr_ex.vin_attr_ex_mask = sensor_config->vin_attr_ex->vin_attr_ex_mask;
+		vin_attr_ex.mclk_ex_attr.mclk_freq = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
 	}
 
 	ret = hbn_vnode_open(HB_VIN, hw_id, AUTO_ALLOC_ID, vin_node_handle);
@@ -111,6 +110,8 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 	// 设置输出通道的属性
 	ret = hbn_vnode_set_ochn_attr(*vin_node_handle, ochn_id, vin_ochn_attr);
 	ERR_CON_EQ(ret, 0);
+
+	vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
 	if (vin_attr_ex_mask) {
 		for (uint8_t i = 0; i < VIN_ATTR_EX_INVALID; i ++) {
 			if ((vin_attr_ex_mask & (1 << i)) == 0)

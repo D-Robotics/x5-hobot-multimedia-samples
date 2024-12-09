@@ -166,7 +166,7 @@ static void *get_decode_output_thread(void *ptr) {
 	char nv12_file_name[128];
 
 	while (privThread->eState == E_THREAD_RUNNING) {
-		ret = vp_codec_get_output(&vpp_box->m_decode_context, &decode_frame, VP_GET_FRAME_TIMEOUT);
+		ret = vp_codec_get_output(&vpp_box->m_decode_context, &decode_frame, VP_DECODER_GET_FRAME_TIMEOUT);
 		if (ret != 0) {
 			usleep(30 * 1000);
 			continue;

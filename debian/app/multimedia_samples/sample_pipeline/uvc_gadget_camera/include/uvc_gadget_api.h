@@ -3,9 +3,9 @@
  * uvc_gadget_api.h
  *	uvc gadget api for uvc gadget application development.
  *
- * Copyright (C) 2019 Horizon Robotics, Inc.
+ * Copyright (C) 2024 D-Robotics, Inc.
  *
- * Contact: jianghe xu<jianghe.xu@horizon.ai>
+ * Contact: jianghe xu<jianghe.xu@d-robotics.cc>
  */
 
 #ifndef _UVC_GADGET_API_H_

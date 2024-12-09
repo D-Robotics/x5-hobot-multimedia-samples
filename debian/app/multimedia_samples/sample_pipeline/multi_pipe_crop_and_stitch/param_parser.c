@@ -48,9 +48,12 @@ static void print_help(void) {
 	printf("-c, --config=\"sensor=id \"\n");
 	printf("\t\tConfigure parameters for each video pipeline, can be repeated up to %d times.\n", MAX_PIPE_NUM);
 	printf("\t\tsensor   --  Sensor index,can have multiple parameters, reference sensor list.\n");
-	printf("-o, --output=\"file or hdmi, default is file\n");
+	printf("\t\tgdc      --  Enable gdc, default is disable.\n");
+	printf("\t\tout264   --  Enable codec h264 stream, default is disable.\n");
+	printf("\t\toutmjpeg --  Enable codec mjpeg stream, default is disable.\n");
+	printf("\t\tfile 	 --  Enable codec stream save as file, default is disable.\n");
+	printf("-o, --output=\"file or hdmi, default is nothing output\n");
 	printf("-r, --ratio=\"camera image width ratio, used to blend, default is 0.0\n");
-	printf("-g, --gdc_enable\tEnable gdc, default is disable\n");
 	printf("-b, --bpu_enable\tEnable bpu, default is disable\n");
 	printf("-p, --bpu_postprocess_enable\tEnable bpu postprocess, default is disable\n");
 	printf("-v, --verbose\tEnable verbose mode\n");
@@ -65,8 +68,8 @@ static void print_help(void) {
 	printf("\n\nExample:(only support 2 cameras .)\n");
 	printf("Save File: ./multi_pipe_crop_and_stitch -c \"sensor=3\" -c \"sensor=3\"\n");
 	printf("HDMI Display: ./multi_pipe_crop_and_stitch -c \"sensor=3\" -c \"sensor=3\" -o hdmi\n");
-	printf("HDMI Display, Enable GDC: ./multi_pipe_crop_and_stitch -c \"sensor=3\" -c \"sensor=3\" -o hdmi -g\n");
-	printf("HDMI Display, Enable GDC, Enable Blend: ./multi_pipe_crop_and_stitch -c \"sensor=3\" -c \"sensor=3\" -o hdmi -g -r 0.02\n");
+	printf("HDMI Display, Enable GDC: ./multi_pipe_crop_and_stitch -c \"sensor=3 gdc=1\" -c \"sensor=3 gdc=1\" -o hdmi\n");
+	printf("HDMI Display, Enable GDC, Enable Blend: ./multi_pipe_crop_and_stitch -c \"sensor=3 gdc=1\" -c \"sensor=3 gdc=1\" -o hdmi -r 0.02\n");
 #else
 	printf("\n\nExample:(only support 2 cameras and 4 cameras)\n");
 	printf("2 cameras:  ./multi_pipe_crop_and_stitch -c \"sensor=7\" -c \"sensor=3\"\n");
@@ -90,11 +93,12 @@ static int split_string(const char *str, const char *delim, char *out[], int max
 	return count;
 }
 
-void parse_config(sensor_param_config_t *sensor_param_config, const char *config) {
+void parse_config(int chn, sensor_param_config_t *sensor_param_config, const char *config) {
+	#define SENSOR_CHN_CONFIG_ELEM_NUM		6
 	int ret = 0;
-	char *parts[4];
+	char *parts[SENSOR_CHN_CONFIG_ELEM_NUM];
 	int sensor_idx = -1;
-	int count = split_string(config, " ", parts, 4);
+	int count = split_string(config, " ", parts, SENSOR_CHN_CONFIG_ELEM_NUM);
 
 	static int32_t used_mipi_host = 0; //must is static
 	for (int i = 0; i < count; i++) {
@@ -150,6 +154,39 @@ void parse_config(sensor_param_config_t *sensor_param_config, const char *config
 				continue;
 			}
 			sensor_param_config->sensor_mode = atoi(key_value[1]);
+		} else if (strcmp(key_value[0], "gdc") == 0) {
+			if (!is_number(key_value[1])) {
+				fprintf(stderr, "Invalid gdc number: %s\n", key_value[1]);
+				continue;
+			}
+			sensor_param_config->gdc_enable = atoi(key_value[1]);
+		} else if (strcmp(key_value[0], "out264") == 0) {
+			if (!is_number(key_value[1])) {
+				fprintf(stderr, "Invalid out264 number: %s\n", key_value[1]);
+				continue;
+			}
+			sensor_param_config->h264_outfile.enable = atoi(key_value[1]);
+			if (sensor_param_config->h264_outfile.enable) {
+				snprintf(sensor_param_config->h264_outfile.filename, SENSOR_OUTFILE_NAME_LEN, \
+						"Chn%d.h264", chn);
+			}
+		} else if (strcmp(key_value[0], "outmjpeg") == 0) {
+			if (!is_number(key_value[1])) {
+				fprintf(stderr, "Invalid outmjpeg number: %s\n", key_value[1]);
+				continue;
+			}
+			sensor_param_config->mjpeg_outfile.enable = atoi(key_value[1]);
+			if (sensor_param_config->mjpeg_outfile.enable) {
+				snprintf(sensor_param_config->mjpeg_outfile.filename, SENSOR_OUTFILE_NAME_LEN, \
+						"Chn%d.mjpeg", chn);
+			}
+		} else if (strcmp(key_value[0], "file") == 0) {
+			if (!is_number(key_value[1])) {
+				fprintf(stderr, "Invalid file number: %s\n", key_value[1]);
+				continue;
+			}
+			sensor_param_config->h264_outfile.enable_save_file = atoi(key_value[1]);
+			sensor_param_config->mjpeg_outfile.enable_save_file = atoi(key_value[1]);
 		} else {
 			fprintf(stderr, "Unknown key: %s\n", key_value[0]);
 		}
@@ -177,34 +214,44 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 		{"config", required_argument, NULL, 'c'},
 		{"ratio", no_argument, NULL, 'r'},
 		{"output", no_argument, NULL, 'o'},
-		{"gdc_enable", no_argument, NULL, 'g'},
 		{"bpu_enable", no_argument, NULL, 'b'},
+		{"bpu_fps", no_argument, NULL, 'f'},
 		{"verbose", no_argument, NULL, 'v'},
 		{"help", no_argument, NULL, 'h'},
 		{NULL, 0, NULL, 0}
 	};
 
-	//output default is file.
-	strcpy(param_config->output, "file");
-	param_config->output_file_name = "output.h265";
+	//output default is null.
+	strcpy(param_config->output, "Null");
+	param_config->output_file_name = "empty";
+
 	param_config->blend_ratio = 0.0;
-	param_config->gdc_enable = 0;
+//	param_config->gdc_enable = 0;
 	param_config->bpu_enable = 0;
 	param_config->bpu_postporcess_enable = 0;
 	param_config->verbose_flag = 0;
+	param_config->bpu_fps = 5;
 
 	int c = 0;
 	int32_t total_pipeline_num = 0;
-	while ((c = getopt_long(argc, argv, "c:r:o:pbgvh", long_options, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "c:r:o:f:pbvh", long_options, NULL)) != -1) {
 		switch (c) {
 		case 'c':
 			if (total_pipeline_num >= MAX_PIPE_NUM) {
 				fprintf(stderr, "Too many configurations. Maximum allowed is %d.\n", MAX_PIPE_NUM);
 				return -1;
 			}
-
-			parse_config(&param_config->sensor_param_config[total_pipeline_num], optarg);
+			parse_config(total_pipeline_num, &param_config->sensor_param_config[total_pipeline_num], optarg);
 			total_pipeline_num++;
+			break;
+		case 'f':
+			int bpu_fps = atoi(optarg);
+			if((bpu_fps <= 0) || (bpu_fps > 30)){
+				printf("input bpu fps is invalid [%s] => %d, so use default %d\n",
+					optarg, bpu_fps, param_config->bpu_fps);
+			}else{
+				param_config->bpu_fps = bpu_fps;
+			}
 			break;
 		case 'r':
 			float blend_ratio = atof(optarg);
@@ -217,7 +264,10 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 		case 'o':
 			if(strcmp("file", optarg) == 0){
 				strcpy(param_config->output, "file");
+				param_config->gpu_enable = 1;
+				param_config->output_file_name = "output.h265";
 			}else if(strcmp("hdmi", optarg) == 0){
+				param_config->gpu_enable = 1;
 				strcpy(param_config->output, "hdmi");
 			}else{
 				printf("output form only support [%s]: file and hdmi\n", param_config->output);
@@ -225,9 +275,6 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 			}
 		case 'v':
 			param_config->verbose_flag = 1;
-			break;
-		case 'g':
-			param_config->gdc_enable = 1;
 			break;
 
 		case 'b':
@@ -277,11 +324,18 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 		printf("\tSensor name: %s\n", param_config->sensor_param_config[i].sensor_config->sensor_name);
 		printf("\tActive mipi host: %d\n", param_config->sensor_param_config[i].active_mipi_host);
 		printf("\tVse Channel: %d\n", param_config->sensor_param_config[i].vse_bind_n2d_chn);
-		printf("\tGDC Enable: %d\n", param_config->gdc_enable);
+		printf("\tGDC Enable: %d\n", param_config->sensor_param_config[i].gdc_enable);
+		printf("\tCodec H264: Enable[%d] [%d] File[%s]\n", param_config->sensor_param_config[i].h264_outfile.enable, \
+			param_config->sensor_param_config[i].h264_outfile.enable_save_file, \
+			(param_config->sensor_param_config[i].h264_outfile.enable_save_file)?param_config->sensor_param_config[i].h264_outfile.filename:"Null");
+		printf("\tCodec Mjpeg: Enable[%d] [%d] File[%s]\n", param_config->sensor_param_config[i].mjpeg_outfile.enable, \
+			param_config->sensor_param_config[i].mjpeg_outfile.enable_save_file, \
+			(param_config->sensor_param_config[i].mjpeg_outfile.enable_save_file)?param_config->sensor_param_config[i].mjpeg_outfile.filename:"Null");
 	}
 	printf("\n\n blend info: %f\n", param_config->blend_ratio);
 	printf("\n\n BPU info\n");
 
+	printf("\t fps: %d\n", param_config->bpu_fps);
 	printf("\tenable: %d\n", param_config->bpu_enable);
 	printf("\tpost process enable: %d\n", param_config->bpu_postporcess_enable);
 

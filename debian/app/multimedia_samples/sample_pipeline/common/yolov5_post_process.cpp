@@ -436,3 +436,44 @@ char* Yolov5PostProcess(Yolov5PostProcessInfo_t *post_info) {
 	return str_dets;
 }
 
+void  Yolov5PostProcessWidthVector(Yolov5PostProcessInfo_t *post_info, detect_object_array_t *detect_object_array) {
+	hbDNNTensor *tensor = post_info->output_tensor;
+
+	std::vector<Detection> dets;
+	std::vector<Detection> det_restuls;
+
+	uint32_t i = 0;
+
+	// 根据置信度过滤检测框
+	for (i = 0; i < default_yolov5_config.strides.size(); i++) {
+		_postProcess(&tensor[i], post_info, i, dets);
+	}
+	// 计算交并比来合并检测框，传入交并比阈值(0.65)和返回box数量(5000)
+	yolov5_nms(dets, post_info->nms_threshold, post_info->nms_top_k, det_restuls, false);
+
+
+	int det_results_count = 0;
+	for (i = 0; i < det_restuls.size(); i++) {
+		detect_object_array->detect_objects[i].x = det_restuls[i].bbox.xmin;;
+		detect_object_array->detect_objects[i].y = det_restuls[i].bbox.ymin;;
+		detect_object_array->detect_objects[i].width = det_restuls[i].bbox.xmax - det_restuls[i].bbox.xmin;
+		detect_object_array->detect_objects[i].height = det_restuls[i].bbox.ymax - det_restuls[i].bbox.ymin;
+		detect_object_array->detect_objects[i].label = det_restuls[i].class_name;
+
+		det_results_count++;
+		if(det_results_count > DETECT_OBJECT_COUNT){
+			printf("Warnning: no enough memory for object, max:%d < current:%d .\n", DETECT_OBJECT_COUNT, det_results_count);
+		}
+
+#if 0
+		printf("[%d] %f %f %f %f [%d %d] score:%f\n", i,
+			det_restuls[i].bbox.xmin, det_restuls[i].bbox.ymin,
+			det_restuls[i].bbox.xmax, det_restuls[i].bbox.ymax,
+			detect_object_array->detect_objects[i].width,
+			detect_object_array->detect_objects[i].height,
+			det_restuls[i].score);
+#endif
+	}
+	detect_object_array->valid_count = det_results_count;
+}
+

@@ -21,6 +21,8 @@
 
 typedef struct gdc_info
 {
+	hbn_vflow_handle_t vflow_fd;
+	hbn_vnode_handle_t gdc_vnode_fd;
 	uint32_t input_width;
 	uint32_t input_height;
 	uint32_t output_width;
@@ -30,6 +32,7 @@ typedef struct gdc_info
 	char* input_file;
 	char* output_file;
 	char* pid;
+	int gdc_vnode_mode;
 } gdc_info_s;
 
 
@@ -43,15 +46,17 @@ static struct option const long_options[] = {
 	{"oh", required_argument, NULL, 'y'},
 	{"count", required_argument, NULL, 'C'},
 	{"pid", required_argument, NULL, 'p'},
+	{"feedback", no_argument, NULL, 'f'},
 	{NULL, 0, NULL, 0}
 };
 
 int read_gdc_config(gdc_info_s * gdc_info, hb_mem_common_buf_t *bin_buf);
 int gdc_config_free(hb_mem_common_buf_t *bin_buf);
 int read_nv12_image(gdc_info_s *gdc_info, hbn_vnode_image_t *input_image);
-int create_and_run_vflow(gdc_info_s *gdc_info,
-						hbn_vnode_image_t *input_image,
-						hb_mem_common_buf_t *bin_buf);
+int create_start_gdc_vnode(gdc_info_s *gdc_info, hb_mem_common_buf_t *bin_buf);
+int stop_destroy_gdc_vnode(gdc_info_s *gdc_info);
+int run_gdc(gdc_info_s *gdc_info, hbn_vnode_image_t *input_image);
+int run_gdc_stress_test(gdc_info_s *gdc_info, hbn_vnode_image_t *input_image);
 
 static void print_help() {
 	printf("Usage: %s [OPTIONS]\n", get_program_name());
@@ -65,6 +70,7 @@ static void print_help() {
 	printf("  y, --oh [output_height]       Specify the height of the output image (optional).\n");
 	printf("  C, --Count [run count]        Specify gdc sendframe and getframe count.\n");
 	printf("  p, --p [process id]           Specify id of process.\n");
+	printf("  f, --feedback                 Specify feedback mode\n");
 	printf("\n");
 	printf("If --ow and --oh are not specified, they will default to the input width and height, respectively.\n");
 }
@@ -78,7 +84,7 @@ int main(int argc, char** argv) {
 	hb_mem_common_buf_t bin_buf = {0};
 	gdc_info.pid = "default";
 
-	while((c = getopt_long(argc, argv, "c:i:o:w:h:x:y:C:p:",
+	while((c = getopt_long(argc, argv, "c:i:o:w:h:x:y:C:p:f",
 							long_options, &opt_index)) != -1) {
 		switch (c)
 		{
@@ -109,6 +115,9 @@ int main(int argc, char** argv) {
 		case 'p':
 			gdc_info.pid = optarg;
 			break;
+		case 'f':
+			gdc_info.gdc_vnode_mode = VNODE_WORK_MODE_FEEDBACK;
+			break;
 		default:
 			print_help();
 			return 0;
@@ -124,6 +133,7 @@ int main(int argc, char** argv) {
 	if (gdc_info.output_height == 0)
 		gdc_info.output_height = gdc_info.input_height;
 
+	printf("GDC vnode work mode: %s\n", (gdc_info.gdc_vnode_mode == VNODE_WORK_MODE_VFLOW)?"vflow":"feedback");
 	printf("config file: %s\ninput image: %s\noutput image: %s\ninput:%dx%d\noutput:%dx%d\n",
 			gdc_info.gdc_bin_file, gdc_info.input_file,
 			gdc_info.output_file,
@@ -136,9 +146,14 @@ int main(int argc, char** argv) {
 	ERR_CON_EQ(ret, 0);
 	ret = read_nv12_image(&gdc_info, &input_image);
 	ERR_CON_EQ(ret, 0);
-	ret = create_and_run_vflow(&gdc_info, &input_image,
-								&bin_buf);
+
+	ret = create_start_gdc_vnode(&gdc_info, &bin_buf);
 	ERR_CON_EQ(ret, 0);
+	ret = run_gdc_stress_test(&gdc_info, &input_image);
+	ERR_CON_EQ(ret, 0);
+	ret = stop_destroy_gdc_vnode(&gdc_info);
+	ERR_CON_EQ(ret, 0);
+
 	ret = gdc_config_free(&bin_buf);
 	ret = hb_mem_free_buf(input_image.buffer.fd[0]);
 	hb_mem_module_close();
@@ -221,23 +236,15 @@ int gdc_config_free(hb_mem_common_buf_t *bin_buf) {
 	return hb_mem_free_buf(bin_buf->fd);
 }
 
-int create_and_run_vflow(gdc_info_s *gdc_info,
-							hbn_vnode_image_t *input_image,
-							hb_mem_common_buf_t *bin_buf) {
+int create_start_gdc_vnode(gdc_info_s *gdc_info, hb_mem_common_buf_t *bin_buf) {
 	int ret = 0;
-	int i = 0;
-	uint32_t time_count = 50;
 	uint32_t hw_id = 0;
 	uint32_t chn_id = 0;
-	hbn_vflow_handle_t vflow_fd;
-	hbn_vnode_handle_t gdc_vnode_fd;
-	hbn_buf_alloc_attr_t alloc_attr = {0};
-	hbn_vnode_image_t output_img = {0};
-	gdc_attr_t gdc_attr = {0};
-	int timeout = 1000;
-	struct timeval tv_begin, tv_end;
 
-	ret = hbn_vnode_open(HB_GDC, hw_id, AUTO_ALLOC_ID, &gdc_vnode_fd);
+	hbn_buf_alloc_attr_t alloc_attr = {0};
+	gdc_attr_t gdc_attr = {0};
+
+	ret = hbn_vnode_open(HB_GDC, hw_id, AUTO_ALLOC_ID, &gdc_info->gdc_vnode_fd);
 	ERR_CON_EQ(ret, 0);
 	gdc_attr.config_addr = bin_buf->phys_addr;
 	gdc_attr.config_size = bin_buf->size;
@@ -246,43 +253,103 @@ int create_and_run_vflow(gdc_info_s *gdc_info,
 	gdc_attr.total_planes = 2;
 	gdc_attr.div_width = 0;
 	gdc_attr.div_height = 0;
-	ret = hbn_vnode_set_attr(gdc_vnode_fd, &gdc_attr);
+	ret = hbn_vnode_set_attr(gdc_info->gdc_vnode_fd, &gdc_attr);
 	ERR_CON_EQ(ret, 0);
 
 	gdc_ichn_attr_t gdc_ichn_attr = {0};
 	gdc_ichn_attr.input_width = gdc_info->input_width;
 	gdc_ichn_attr.input_height = gdc_info->input_height;
 	gdc_ichn_attr.input_stride = gdc_info->input_width;
-	ret = hbn_vnode_set_ichn_attr(gdc_vnode_fd, chn_id, &gdc_ichn_attr);
+	ret = hbn_vnode_set_ichn_attr(gdc_info->gdc_vnode_fd, chn_id, &gdc_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 
 	gdc_ochn_attr_t gdc_ochn_attr = {0};
 	gdc_ochn_attr.output_width = gdc_info->output_width;
 	gdc_ochn_attr.output_height = gdc_info->output_height;
 	gdc_ochn_attr.output_stride = gdc_info->output_width;
-	ret = hbn_vnode_set_ochn_attr(gdc_vnode_fd, chn_id, &gdc_ochn_attr);
+	ret = hbn_vnode_set_ochn_attr(gdc_info->gdc_vnode_fd, chn_id, &gdc_ochn_attr);
 	ERR_CON_EQ(ret, 0);
 	alloc_attr.buffers_num = 3;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN |
 					HB_MEM_USAGE_CPU_WRITE_OFTEN |
 					HB_MEM_USAGE_CACHED;
-	ret = hbn_vnode_set_ochn_buf_attr(gdc_vnode_fd, chn_id, &alloc_attr);
+	ret = hbn_vnode_set_ochn_buf_attr(gdc_info->gdc_vnode_fd, chn_id, &alloc_attr);
 	ERR_CON_EQ(ret, 0);
 
-	ret = hbn_vflow_create(&vflow_fd);
+	switch (gdc_info->gdc_vnode_mode) {
+		case VNODE_WORK_MODE_VFLOW:
+			ret = hbn_vflow_create(&gdc_info->vflow_fd);
+			ERR_CON_EQ(ret, 0);
+			ret = hbn_vflow_add_vnode(gdc_info->vflow_fd, gdc_info->gdc_vnode_fd);
+			ERR_CON_EQ(ret, 0);
+			ret = hbn_vflow_start(gdc_info->vflow_fd);
+			ERR_CON_EQ(ret, 0);
+			break;
+		case VNODE_WORK_MODE_FEEDBACK:
+			ret = hbn_vnode_start(gdc_info->gdc_vnode_fd);
+			ERR_CON_EQ(ret, 0);
+			break;
+		default:
+			printf("Unknow GDC vnode work mode[%d]\n", gdc_info->gdc_vnode_mode);
+			break;
+	}
+
+	return ret;
+}
+
+int stop_destroy_gdc_vnode(gdc_info_s *gdc_info) {
+	int ret;
+	switch (gdc_info->gdc_vnode_mode) {
+		case VNODE_WORK_MODE_VFLOW:
+			ret = hbn_vflow_stop(gdc_info->vflow_fd);
+			ERR_CON_EQ(ret, 0);
+			hbn_vnode_close(gdc_info->gdc_vnode_fd);
+			hbn_vflow_destroy(gdc_info->vflow_fd);
+			break;
+		case VNODE_WORK_MODE_FEEDBACK:
+			ret = hbn_vnode_stop(gdc_info->gdc_vnode_fd);
+			ERR_CON_EQ(ret, 0);
+			hbn_vnode_close(gdc_info->gdc_vnode_fd);
+			break;
+		default:
+			printf("Unknow GDC vnode work mode[%d]\n", gdc_info->gdc_vnode_mode);
+			break;
+	}
+	return 0;
+}
+
+int run_gdc(gdc_info_s *gdc_info, hbn_vnode_image_t *input_image) {
+	int ret;
+	uint32_t chn_id = 0;
+	hbn_vnode_image_t output_img = {0};
+	int timeout = 1000;
+
+	ret = hbn_vnode_sendframe(gdc_info->gdc_vnode_fd, chn_id, input_image);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vflow_add_vnode(vflow_fd, gdc_vnode_fd);
+	ret = hbn_vnode_getframe(gdc_info->gdc_vnode_fd, chn_id, timeout, &output_img);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vflow_start(vflow_fd);
+	dump_2plane_yuv_to_file(gdc_info->output_file,
+					output_img.buffer.virt_addr[0],
+					output_img.buffer.virt_addr[1],
+					output_img.buffer.size[0],
+					output_img.buffer.size[1]);
+	ret = hbn_vnode_releaseframe(gdc_info->gdc_vnode_fd, chn_id, &output_img);
 	ERR_CON_EQ(ret, 0);
+
+	return 0;
+}
+
+int run_gdc_stress_test(gdc_info_s *gdc_info, hbn_vnode_image_t *input_image)
+{
+	int ret;
+	int i;
+	uint32_t time_count = 50;
+	struct timeval tv_begin, tv_end;
+
 	gettimeofday(&tv_begin, NULL);
 	for(i = 0; i <= gdc_info->count; i++){
-		ret = hbn_vnode_sendframe(gdc_vnode_fd, chn_id, input_image);
-		ERR_CON_EQ(ret, 0);
-		ret = hbn_vnode_getframe(gdc_vnode_fd, chn_id, timeout, &output_img);
-		ERR_CON_EQ(ret, 0);
-		ret = hbn_vnode_releaseframe(gdc_vnode_fd, chn_id, &output_img);
+		ret = run_gdc(gdc_info, input_image);
 		ERR_CON_EQ(ret, 0);
 		if(i > time_count){
 			gettimeofday(&tv_end, NULL);
@@ -294,10 +361,6 @@ int create_and_run_vflow(gdc_info_s *gdc_info,
 	printf("Gdc time consuming [%s]: %ld \n", gdc_info->pid, tv_end.tv_sec - tv_begin.tv_sec);
 	printf("fps average gdc [%s] = %ld \n", gdc_info->pid, gdc_info->count / (tv_end.tv_sec - tv_begin.tv_sec));
 
-	ret = hbn_vflow_stop(vflow_fd);
-	ERR_CON_EQ(ret, 0);
-	hbn_vnode_close(gdc_vnode_fd);
-	hbn_vflow_destroy(vflow_fd);
-
-	return ret;
+	return 0;
 }
+

@@ -19,6 +19,10 @@ struct PerformanceTestParamSimple
 	uint64_t run_count;
 	uint64_t test_start_time_us;
 	uint64_t test_end_time_us;
+
+	uint64_t start_time_us;
+	int min_diff;
+	int max_diff;
 };
 
 void performance_test_start_simple(struct PerformanceTestParamSimple *param);
@@ -34,6 +38,9 @@ struct PerformanceTestParam
 	uint64_t run_count;
 	uint64_t test_start_time_us;
 	uint64_t consumu_time_sum_us;
+
+	int min_diff;
+	int max_diff;
 };
 void performance_test_start(struct PerformanceTestParam *param);
 void performance_test_stop(struct PerformanceTestParam *param);

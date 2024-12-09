@@ -8,7 +8,7 @@
 
 #ifndef _POST_PROCESS_YOLOV5_POST_PROCESS_H_
 #define _POST_PROCESS_YOLOV5_POST_PROCESS_H_
-
+#include "bpu_common.h"
 #include "dnn/hb_dnn.h"
 
 #ifdef __cplusplus
@@ -28,15 +28,17 @@ typedef struct {
 	hbDNNTensor *output_tensor;
 } Yolov5PostProcessInfo_t;
 
-	/**
-	 * Post process
-	 * @param[in] tensor: Model output tensors
-	 * @param[in] image_tensor: Input image tensor
-	 * @param[out] perception: Perception output data
-	 * @return 0 if success
-	 */
-	char* Yolov5PostProcess(Yolov5PostProcessInfo_t *post_info);
+/**
+ * Post process
+ * @param[in] tensor: Model output tensors
+ * @param[in] image_tensor: Input image tensor
+ * @param[out] perception: Perception output data
+ * @return 0 if success
+ */
+char* Yolov5PostProcess(Yolov5PostProcessInfo_t *post_info);
 
+void  Yolov5PostProcessWidthVector(Yolov5PostProcessInfo_t *post_info, detect_object_array_t* detect_object_array);
+	// int Yolov5PostProcessWidthVector(Yolov5PostProcessInfo_t *post_info, detect_object_t *det_restuls, int max_count);
 #ifdef __cplusplus
 }
 #endif

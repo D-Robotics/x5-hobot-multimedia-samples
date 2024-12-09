@@ -5,9 +5,9 @@
  *	current base code from https://github.com/wlhe/uvc-gadget
  *	net stage will replace with http://git.ideasonboard.org/uvc-gadget.git
  *
- * Copyright (C) 2019 Horizon Robotics, Inc.
+ * Copyright (C) 2024 D-Robotics, Inc.
  *
- * Contact: jianghe xu<jianghe.xu@horizon.ai>
+ * Contact: jianghe xu<jianghe.xu@d-robotics.cc>
  */
 
 #ifndef _UVC_GADGET_H_

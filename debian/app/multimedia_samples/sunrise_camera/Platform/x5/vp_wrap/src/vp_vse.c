@@ -15,7 +15,7 @@
 
 #include "vp_wrap.h"
 #include "vp_vse.h"
-#define VSE_MAX_CHANNLE 2 //max is 6
+#define VSE_MAX_CHANNLE 6 //max is 6
 
 int32_t vp_vse_init(vp_vflow_contex_t *vp_vflow_contex)
 {

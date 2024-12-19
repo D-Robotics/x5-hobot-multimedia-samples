@@ -58,6 +58,7 @@ typedef struct
 } vpp_box_t;
 
 static vpp_box_t g_vpp_box[VPP_BOX_MAX_CHANNELS];
+static int vse_chn = 1;
 
 static void vpp_box_push_stream(vpp_box_t *vpp_box, ImageFrame *stream, int pipline_id)
 {
@@ -212,12 +213,12 @@ static void *get_decode_output_thread(void *ptr) {
 		// 编码推流的时间一般比较短，而且时间固定，但是算法的运算时间与模型的选择强相关，并且模型的运行时异步进行的，所以先处理算法
 		// 从第二通道获取数据给编码模块使用
 		if (strlen(vpp_box->m_bpu_handle.m_model_name) > 0) {
-			ret = vp_vse_get_frame(&vpp_box->vp_vflow_contex, 1, &vse_frame);
+			ret = vp_vse_get_frame(&vpp_box->vp_vflow_contex, vse_chn, &vse_frame);
 			if (ret != 0) {
 				// 当线程接收到退出信号时，getframe 接口会立即报超时退出
 				// 所以只有当线程是正常运行状态下的异常才属于真异常
 				if (privThread->eState == E_THREAD_RUNNING) {
-					SC_LOGE("vp_vse_get_frame chn 1 failed(%d).", ret);
+					SC_LOGE("vp_vse_get_frame chn %d failed(%d).",vse_chn, ret);
 				}
 				continue;
 			}
@@ -242,7 +243,7 @@ static void *get_decode_output_thread(void *ptr) {
 
 			bpu_wrap_send_frame(&vpp_box->m_bpu_handle, &bpu_input_buffer);
 
-			vp_vse_release_frame(&vpp_box->vp_vflow_contex, 1, &vse_frame);
+			vp_vse_release_frame(&vpp_box->vp_vflow_contex, vse_chn, &vse_frame);
 		}
 
 		// 从第一通道获取数据给编码模块使用
@@ -399,15 +400,19 @@ int32_t vpp_box_init_param(void)
 		// 第二个通道的数据给BPU使用
 		if (strlen(vpp_box->m_bpu_handle.m_model_name) > 1 && strcmp(vpp_box->m_bpu_handle.m_model_name, "null") != 0) {
 			ret = bpu_wrap_get_model_hw(vpp_box->m_bpu_handle.m_model_name, &model_width, &model_height);
-			vse_config->vse_ochn_attr[1].chn_en = CAM_TRUE;
-			vse_config->vse_ochn_attr[1].roi.x = 0;
-			vse_config->vse_ochn_attr[1].roi.y = 0;
-			vse_config->vse_ochn_attr[1].roi.w = input_width;
-			vse_config->vse_ochn_attr[1].roi.h = input_height;
-			vse_config->vse_ochn_attr[1].target_w = model_width;
-			vse_config->vse_ochn_attr[1].target_h = model_height;
-			vse_config->vse_ochn_attr[1].fmt = FRM_FMT_NV12;
-			vse_config->vse_ochn_attr[1].bit_width = 8;
+			if (model_width > input_width || model_height > input_height)
+				vse_chn = 5;
+			else
+				vse_chn = 1;
+			vse_config->vse_ochn_attr[vse_chn].chn_en = CAM_TRUE;
+			vse_config->vse_ochn_attr[vse_chn].roi.x = 0;
+			vse_config->vse_ochn_attr[vse_chn].roi.y = 0;
+			vse_config->vse_ochn_attr[vse_chn].roi.w = input_width;
+			vse_config->vse_ochn_attr[vse_chn].roi.h = input_height;
+			vse_config->vse_ochn_attr[vse_chn].target_w = model_width;
+			vse_config->vse_ochn_attr[vse_chn].target_h = model_height;
+			vse_config->vse_ochn_attr[vse_chn].fmt = FRM_FMT_NV12;
+			vse_config->vse_ochn_attr[vse_chn].bit_width = 8;
 		}
 	}
 

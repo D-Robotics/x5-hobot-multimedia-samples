@@ -1,3 +1,17 @@
+// Copyright (c) 2024，D-Robotics.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 /***************************************************************************
  * @COPYRIGHT NOTICE
  * @Copyright 2024 D-Robotics, Inc.
@@ -15,7 +29,7 @@
 
 #include "vp_wrap.h"
 #include "vp_vse.h"
-#define VSE_MAX_CHANNLE 2 //max is 6
+#define VSE_MAX_CHANNLE 6 //max is 6
 
 int32_t vp_vse_init(vp_vflow_contex_t *vp_vflow_contex)
 {

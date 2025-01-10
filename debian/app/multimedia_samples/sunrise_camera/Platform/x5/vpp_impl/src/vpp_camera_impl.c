@@ -1,3 +1,17 @@
+// Copyright (c) 2024，D-Robotics.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
@@ -65,6 +79,7 @@ typedef struct
 
 static vp_drm_context_t g_drm_context;
 static vpp_camera_t g_vpp_camera[VPP_CAM_MAX_CHANNELS];
+static int vse_chn = 1;
 
 static void vpp_camera_push_stream(vpp_camera_t *vpp_camera, ImageFrame *stream)
 {
@@ -307,12 +322,12 @@ static void *send_yuv_to_bpu(void *ptr) {
 	mThreadSetNameWidthIndex(privThread, __func__, vpp_camera->pipline_id);
 
 	while(privThread->eState == E_THREAD_RUNNING) {
-		ret = vp_vse_get_frame(&vpp_camera->vp_vflow_contex, 1, &vse_frame);
+		ret = vp_vse_get_frame(&vpp_camera->vp_vflow_contex, vse_chn, &vse_frame);
 		if (ret != 0) {
 			// 当线程接收到退出信号时，getframe 接口会立即报超时退出
 			// 所以只有当线程是正常运行状态下的异常才属于真异常
 			if (privThread->eState == E_THREAD_RUNNING) {
-				SC_LOGE("vp_vse_get_frame chn 1 failed(%d).", ret);
+				SC_LOGE("vp_vse_get_frame chn %d failed(%d).", vse_chn, ret);
 				vp_print_debug_infos_when_error();
 			}
 			break;
@@ -327,7 +342,7 @@ static void *send_yuv_to_bpu(void *ptr) {
 		// print_bpu_buffer_info(&bpu_input_buffer);
 
 		bpu_wrap_send_frame(&vpp_camera->m_bpu_handle, &bpu_input_buffer);
-		ret = vp_vse_release_frame(&vpp_camera->vp_vflow_contex, 1, &vse_frame);
+		ret = vp_vse_release_frame(&vpp_camera->vp_vflow_contex, vse_chn, &vse_frame);
 		if (ret != 0) {
 			SC_LOGE("vp_vse_release_frame failed");
 			break;
@@ -433,15 +448,19 @@ int32_t vpp_camera_init_param(void)
 		if (strlen(g_vpp_camera[i].m_bpu_handle.m_model_name) > 1
 			&& strcmp(g_vpp_camera[i].m_bpu_handle.m_model_name, "null") != 0) {
 			ret = bpu_wrap_get_model_hw(g_vpp_camera[i].m_bpu_handle.m_model_name, &model_width, &model_height);
-			vse_config->vse_ochn_attr[1].chn_en = CAM_TRUE;
-			vse_config->vse_ochn_attr[1].roi.x = 0;
-			vse_config->vse_ochn_attr[1].roi.y = 0;
-			vse_config->vse_ochn_attr[1].roi.w = input_width;
-			vse_config->vse_ochn_attr[1].roi.h = input_height;
-			vse_config->vse_ochn_attr[1].target_w = model_width;
-			vse_config->vse_ochn_attr[1].target_h = model_height;
-			vse_config->vse_ochn_attr[1].fmt = FRM_FMT_NV12;
-			vse_config->vse_ochn_attr[1].bit_width = 8;
+			if (model_width > input_width || model_height > input_height)
+				vse_chn = 5;
+			else
+				vse_chn = 1;
+			vse_config->vse_ochn_attr[vse_chn].chn_en = CAM_TRUE;
+			vse_config->vse_ochn_attr[vse_chn].roi.x = 0;
+			vse_config->vse_ochn_attr[vse_chn].roi.y = 0;
+			vse_config->vse_ochn_attr[vse_chn].roi.w = input_width;
+			vse_config->vse_ochn_attr[vse_chn].roi.h = input_height;
+			vse_config->vse_ochn_attr[vse_chn].target_w = model_width;
+			vse_config->vse_ochn_attr[vse_chn].target_h = model_height;
+			vse_config->vse_ochn_attr[vse_chn].fmt = FRM_FMT_NV12;
+			vse_config->vse_ochn_attr[vse_chn].bit_width = 8;
 		}
 
 		// 第三个通道的数据给显示器使用，默认 1080P

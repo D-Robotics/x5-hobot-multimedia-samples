@@ -381,21 +381,28 @@ static int32_t get_rc_params(media_codec_context_t *context,
 	return ret;
 }
 
-int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t codec_type,
-	int32_t width, int32_t height, int32_t frame_rate, uint32_t bit_rate, bool external_frame_buf)
+// int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t codec_type,
+// 	int32_t width, int32_t height, int32_t frame_rate, uint32_t bit_rate, bool external_frame_buf)
+int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_user_config_t *user_config)
+
 {
 	mc_video_codec_enc_params_t *params;
 
 	memset(context, 0x00, sizeof(media_codec_context_t));
 	context->encoder = true;
 	params = &context->video_enc_params;
-	params->width = width;
-	params->height = height;
+	params->width = user_config->width;
+	params->height = user_config->height;
 	params->pix_fmt = MC_PIXEL_FORMAT_NV12;
-	params->bitstream_buf_size = (width * height * 3 / 2  + 0x3ff) & ~0x3ff;
+	params->bitstream_buf_size = (user_config->width * user_config->height * 3 / 2  + 0x3ff) & ~0x3ff;
 	SC_LOGD("params->bitstream_buf_size: %d", params->bitstream_buf_size);
 	params->frame_buf_count = 5;
-	params->external_frame_buf = external_frame_buf;
+	params->external_frame_buf = user_config->input_buffer_is_extrenal;
+	if(params->external_frame_buf){
+		params->frame_buf_count = 1;
+	}else{
+		params->frame_buf_count = 5;
+	}
 	params->bitstream_buf_count = 5;
 	/* Hardware limitations of x5 wave521cl:
 	 * - B-frame encoding is not supported.
@@ -410,38 +417,38 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 	params->mir_direction = MC_DIRECTION_NONE;
 	params->frame_cropping_flag = false;
 	params->enable_user_pts = 1;
-	switch (codec_type)
+	switch (user_config->codec_type)
 	{
 	case MEDIA_CODEC_ID_H264:
-		SC_LOGI("codec type is h264: frame size:%d  frame rate: %d", params->bitstream_buf_size, frame_rate);
+		SC_LOGI("codec type is h264: frame size:%d  frame rate: %d", params->bitstream_buf_size, user_config->frame_rate);
 		context->codec_id = MEDIA_CODEC_ID_H264;
 		params->rc_params.mode = MC_AV_RC_MODE_H264CBR;
 		get_rc_params(context, &params->rc_params);
-		params->rc_params.h264_cbr_params.frame_rate = frame_rate;
-		params->rc_params.h264_cbr_params.bit_rate = bit_rate;
+		params->rc_params.h264_cbr_params.frame_rate = user_config->frame_rate;
+		params->rc_params.h264_cbr_params.bit_rate = user_config->bit_rate;
 		break;
 	case MEDIA_CODEC_ID_H265:
-		SC_LOGI("codec type is h265: frame size:%d  frame rate: %d", params->bitstream_buf_size, frame_rate);
+		SC_LOGI("codec type is h265: frame size:%d  frame rate: %d", params->bitstream_buf_size, user_config->frame_rate);
 		context->codec_id = MEDIA_CODEC_ID_H265;
 		params->rc_params.mode = MC_AV_RC_MODE_H265CBR;
 		get_rc_params(context, &params->rc_params);
-		params->rc_params.h265_cbr_params.frame_rate = frame_rate;
-		params->rc_params.h265_cbr_params.bit_rate = bit_rate;
+		params->rc_params.h265_cbr_params.frame_rate = user_config->frame_rate;
+		params->rc_params.h265_cbr_params.bit_rate = user_config->bit_rate;
 		break;
 	case MEDIA_CODEC_ID_MJPEG:
-		SC_LOGI("codec type is mjpeg: frame size:%d  frame rate: %d", params->bitstream_buf_size, frame_rate);
+		SC_LOGI("codec type is mjpeg: frame size:%d  frame rate: %d", params->bitstream_buf_size, user_config->frame_rate);
 		context->codec_id = MEDIA_CODEC_ID_MJPEG;
 		params->rc_params.mode = MC_AV_RC_MODE_MJPEGFIXQP;
 		get_rc_params(context, &params->rc_params);
-		params->mjpeg_enc_config.restart_interval = width / 16;
+		params->mjpeg_enc_config.restart_interval = user_config->width / 16;
 		break;
 	case MEDIA_CODEC_ID_JPEG:
 		context->codec_id = MEDIA_CODEC_ID_JPEG;
 		params->jpeg_enc_config.quality_factor = 50;
-		params->mjpeg_enc_config.restart_interval = width / 16;
+		params->mjpeg_enc_config.restart_interval = user_config->width / 16;
 		break;
 	default:
-		SC_LOGE("Not Support encoding type: %d!\n", codec_type);
+		SC_LOGE("Not Support encoding type: %d!\n", user_config->codec_type);
 		return -1;
 	}
 

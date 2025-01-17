@@ -1,17 +1,3 @@
-// Copyright (c) 2024，D-Robotics.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 #include"vp_pipeline.h"
 
 static int create_camera_node(pipe_contex_t *pipe_contex, uint32_t sensor_mode)
@@ -59,9 +45,8 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
 			pipe_contex->csi_config.index);
 	}else{
-		vin_attr_ex.vin_attr_ex_mask = 0x80;	//bit7 for mclk
-		vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000; // 24MHz
-		vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
+		vin_attr_ex.vin_attr_ex_mask = sensor_config->vin_attr_ex->vin_attr_ex_mask;
+		vin_attr_ex.mclk_ex_attr.mclk_freq = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
 	}
 
 	ret = hbn_vnode_open(HB_VIN, hw_id, AUTO_ALLOC_ID, vin_node_handle);
@@ -75,6 +60,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	// 设置输出通道的属性
 	ret = hbn_vnode_set_ochn_attr(*vin_node_handle, ochn_id, vin_ochn_attr);
 	ERR_CON_EQ(ret, 0);
+	vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
 	if (vin_attr_ex_mask) {
 		for (uint8_t i = 0; i < VIN_ATTR_EX_INVALID; i ++) {
 			if ((vin_attr_ex_mask & (1 << i)) == 0)

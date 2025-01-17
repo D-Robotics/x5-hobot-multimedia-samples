@@ -115,7 +115,29 @@ const REQUEST_TYPES = {
 	ALOG_RESULT: 10
 };
 
+// 显示错误提示框
+function showErrorModal() {
+    document.getElementById("errorModal").style.display = "flex";
+}
+function hideErrorModal() {
+    document.getElementById("errorModal").style.display = "none";
+}
+// 隐藏错误提示框
+function resetConfig() {
+	hideErrorModal();
+	render_json_to_html(g_solution_configs);
+
+
+	// 完成UI界面渲染和调整后再拉流
+	// 保证首次拉流时websocket已经连接
+	if (Wfs.isSupported()) {
+		start_stream(g_current_layout);
+	}
+}
+
 window.onload = function() {
+	hideErrorModal();
+
 	// 获取 display_container 元素
 	var displayContainer = document.getElementById("display_container");
 
@@ -1118,7 +1140,9 @@ function downloadFile(file_path) {
 	}
 }
 
-function show_app_status(msg) {
+function show_app_status(message) {
+	const errorText = document.getElementById("errorText");
+    errorText.textContent = message; // 更新错误信息内容
 }
 
 var is_solution_configs_show = 0;
@@ -1268,7 +1292,7 @@ function save_solution_configs() {
 }
 
 function recovery_solution_configs() {
-	ws_send_cmd(REQUEST_TYPES.RECOVERY_CONFIGS); // 恢复配置
+	ws_send_cmd(REQUEST_TYPES.RECOVERY_CONFIGS); 								// 恢复配置
 }
 
 function open_video() {
@@ -1319,7 +1343,12 @@ function handle_ws_recv(params) {
 			start_stream(g_current_layout);
 		}
 	} else if (params.kind == REQUEST_TYPES.APP_SWITCH && params.app_status) {
-		show_app_status(params.app_status);
+		console.log("app switch is error:", params.app_status);
+		show_app_status(params.app_status);					//只更改 提示框的显示内容
+		if (params.solution_configs) {
+			g_solution_configs = params.solution_configs;	//更新之前的配置
+		}
+		showErrorModal();									//显示 提示框
 	} else if (params.kind == REQUEST_TYPES.SNAPSHOT) {
 		downloadFile(params.Filename);
 	} else if (params.kind == REQUEST_TYPES.ALOG_RESULT) {

@@ -47,7 +47,6 @@ int32_t vp_isp_init(vp_vflow_contex_t *vp_vflow_contex)
 	isp_ochn_attr = sensor_config->isp_ochn_attr;
 	isp_node_handle = &vp_vflow_contex->isp_node_handle;
 
-	isp_attr->input_mode = 2; // offline
 	ret = hbn_vnode_open(HB_ISP, 0, AUTO_ALLOC_ID, isp_node_handle);
 	SC_ERR_CON_EQ(ret, 0, "hbn_vnode_open");
 	ret = hbn_vnode_set_attr(*isp_node_handle, isp_attr);
@@ -57,7 +56,7 @@ int32_t vp_isp_init(vp_vflow_contex_t *vp_vflow_contex)
 	ret = hbn_vnode_set_ichn_attr(*isp_node_handle, chn_id, isp_ichn_attr);
 	SC_ERR_CON_EQ(ret, 0, "hbn_vnode_set_ichn_attr");
 
-	alloc_attr.buffers_num = 3;
+	alloc_attr.buffers_num = vp_vflow_contex->isp_info.ochn_buffer_count;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
 						| HB_MEM_USAGE_CPU_WRITE_OFTEN

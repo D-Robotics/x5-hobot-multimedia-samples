@@ -1,62 +1,83 @@
 #!/bin/sh
 
-if [ -f "../config/ini_parser_functions.sh" ] && [ -f "../config/config.ini" ]; then
-	source ../config/ini_parser_functions.sh
-	# 定义INI文件路径
-	ini_file="../config/config.ini"
+# Determine the directory where the script is located
+script_dir=$(cd "$(dirname "$0")" && pwd)
 
-	# 定义要解析的section和键值
-	target_section="Uart"
-	target_key_baudrate="Baudrate"
-	target_key_device="Device"
-	target_key_count="StressCount"
+# Default values
+Baudrate="115200"
+Device="/dev/ttyS2"
+StressCount="100"
+output_dir=$(realpath "$script_dir/../log")
 
-	# 执行解析并将输出保存到变量
-	parsed_baudrate=$(parse_ini_section "$target_section" "$target_key_baudrate" "$ini_file")
-	parsed_device=$(parse_ini_section "$target_section" "$target_key_device" "$ini_file")
-	parsed_count=$(parse_ini_section "$target_section" "$target_key_count" "$ini_file")
+# Function to display help information
+show_help() {
+    echo "Usage: $0 [options]"
+    echo
+    echo "Options:"
+    echo "  -b <baudrate>    Set the UART baud rate (default: 115200)."
+    echo "  -d <device>      Set the UART device (default: /dev/ttyS1)."
+    echo "  -c <count>       Set the stress count (default: 100)."
+    echo "  -o <directory>   Set the output directory for logs (default: ../log)."
+    echo "  -h               Show this help message and exit."
+    echo
+}
 
-	# 从解析结果中提取数值部分并保存到变量
-	Baudrate=$(echo "$parsed_baudrate" | awk '{print $NF}')
-	Device=$(echo "$parsed_device" | awk '{print $NF}')
-	StressCount=$(echo "$parsed_count" | awk '{print $NF}')
-
-	# 打印配置
-	echo "Configure [Uart] Baudrate: $Baudrate"
-	echo "Configure [Uart] Device: $Device"
-	echo "Configure [Uart] StressCount: $StressCount"
-fi
-
-#如果从INI读取到的数值为空则使用缺省参数
-if [ -z "$Baudrate" ]; then
-	Baudrate="115200"
-	echo "Use default baudrate $Baudrate"
-fi
-
-if [ -z "$Device" ]; then
-	Device="/dev/ttyS1"
-	echo "Use default interface $Device"
-fi
-
-if [ -z "$StressCount" ]; then
-	StressCount="100"
-	echo "Use default count $StressCount"
-fi
-echo "Uart test starting..."
-mkdir -p ../log
-
-num=1
-while true; do
-	uartloopfile="../log/uartloop$num.txt"
-
-	# 检查日志文件是否已存在
-	if [ -e "$uartloopfile" ]; then
-		((num++))
-	else
-		#./uart_test -l -s 1024 -c 100 -b 115200 -d /dev/ttyS1 > ../log/uartloop$num.txt
-		./uart_test -l -s 1024 -c $StressCount -b $Baudrate -d $Device > ../log/uartloop$num.txt
-		break
-	fi
+# Parse command-line arguments
+while getopts "b:d:c:o:h" opt; do
+    case "$opt" in
+        b)
+            Baudrate="$OPTARG"
+            ;;
+        d)
+            Device="$OPTARG"
+            ;;
+        c)
+            StressCount="$OPTARG"
+            ;;
+        o)
+            output_dir="$OPTARG"
+            ;;
+        h)
+            show_help
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: -$OPTARG"
+            show_help
+            exit 1
+            ;;
+    esac
 done
 
-echo "Uart test completed!"
+# Ensure the output directory exists
+mkdir -p "$output_dir"
+
+echo "Uart test starting..."
+echo "Test configuration:"
+echo "  Baudrate: $Baudrate"
+echo "  Device: $Device"
+echo "  Stress count: $StressCount"
+echo "  Output directory: $output_dir"
+
+# Generate a unique log file
+num=1
+while true; do
+    uart_test_log_file="$output_dir/uart_test_log$num.txt"
+    if [ -e "$uart_test_log_file" ]; then
+        num=$((num + 1))
+    else
+        break
+    fi
+done
+
+echo "  Log file: $uart_test_log_file"
+# Run the UART test command with the provided options
+stdbuf -oL "${script_dir}/uart_test" -l -s 1024 -c "$StressCount" -b "$Baudrate" -d "$Device" > "$uart_test_log_file"
+exit_code=$?
+
+if [ "$exit_code" -ne 0 ]; then
+    echo "UART test failed! Check log: $uart_test_log_file"
+    exit 1
+else
+    echo "UART test completed successfully! Log saved to: $uart_test_log_file"
+fi

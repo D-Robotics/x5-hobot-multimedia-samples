@@ -235,6 +235,14 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	vin_ochn_attr = sensor_config->vin_ochn_attr;
 	// 调整 mipi_rx 的 index
 	vin_node_attr->cim_attr.mipi_rx = active_mipi_host;
+	vin_node_attr->cim_attr.func.enable_frame_id = 1;
+	vin_node_attr->cim_attr.func.set_init_frame_id = 1;
+
+	vin_node_attr->cim_attr.func.time_stamp_en = 1;
+	vin_node_attr->cim_attr.func.time_stamp_mode = 3;
+	vin_node_attr->cim_attr.func.ts_src = 1;
+	vin_node_attr->cim_attr.func.pps_src = 6;
+
 	hw_id = vin_node_attr->cim_attr.mipi_rx;
 	vin_node_handle = &pipe_contex->vin_node_handle;
 
@@ -243,8 +251,8 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
 			pipe_contex->csi_config.index);
 	}else{
-		vin_attr_ex.vin_attr_ex_mask = 0x80;	//bit7 for mclk
-		vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000; // 24MHz
+		vin_attr_ex.vin_attr_ex_mask = sensor_config->vin_attr_ex->vin_attr_ex_mask;
+		vin_attr_ex.mclk_ex_attr.mclk_freq = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
 		vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
 	}
 
@@ -272,7 +280,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 			ERR_CON_EQ(ret, 0);
 		}
 	}
-	alloc_attr.buffers_num = PILELINE_OUT_BUFFER_COUNT;
+	alloc_attr.buffers_num = 3;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
 						| HB_MEM_USAGE_CPU_WRITE_OFTEN
@@ -497,28 +505,37 @@ int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t*
 }
 
 int vp_destroy_and_stop_pipeline(pipe_contex_t *pipe_contex){
-    int ret = 0;
 
-    ret = hbn_vflow_stop(pipe_contex->vflow_fd);
-	ERR_CON_EQ(ret, 0);
+	if(pipe_contex->gdc_node_handle > 0)
+		hbn_vnode_stop(pipe_contex->gdc_node_handle);
+	if(pipe_contex->vse_node_handle > 0)
+		hbn_vnode_stop(pipe_contex->vse_node_handle);
+	hbn_vnode_stop(pipe_contex->isp_node_handle);
+	hbn_vnode_stop(pipe_contex->vin_node_handle);
+
+	hbn_vflow_stop(pipe_contex->vflow_fd);
 	hbn_vflow_destroy(pipe_contex->vflow_fd);
-    hbn_vnode_close(pipe_contex->vse_node_handle);
-    hbn_vnode_close(pipe_contex->isp_node_handle);
-    hbn_vnode_close(pipe_contex->vin_node_handle);
+
+	if(pipe_contex->gdc_node_handle > 0)
+		hbn_vnode_close(pipe_contex->gdc_node_handle);
+	if(pipe_contex->vse_node_handle > 0)
+		hbn_vnode_close(pipe_contex->vse_node_handle);
+	hbn_vnode_close(pipe_contex->isp_node_handle);
+	hbn_vnode_close(pipe_contex->vin_node_handle);
 	hbn_camera_destroy(pipe_contex->cam_fd);
 
-    return ret;
+	return 0;
 }
 int vp_create_stop_vse_feedback_pieline(pipe_contex_t *pipe_contex){
-    int ret = 0;
+	int ret = 0;
 
-    ret = hbn_vflow_stop(pipe_contex->vflow_fd);
+	ret = hbn_vflow_stop(pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);
 	hbn_vflow_destroy(pipe_contex->vflow_fd);
 
-    hbn_vnode_close(pipe_contex->vse_node_handle);
+	hbn_vnode_close(pipe_contex->vse_node_handle);
 
-    return ret;
+	return ret;
 }
 
 int vp_create_start_vse_feedback_pieline(pipe_contex_t *pipe_contex, vp_vse_feedback_pipeline_info_t *pipeline_info){

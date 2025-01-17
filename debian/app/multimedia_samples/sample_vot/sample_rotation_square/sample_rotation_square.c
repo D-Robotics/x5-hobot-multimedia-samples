@@ -57,7 +57,7 @@ typedef struct display_context_s
 	int drm_fd;
 
 	const uint32_t crtc_id;
-	const uint32_t plane_id;
+	uint32_t plane_id;
 	uint32_t connector_id;
 
 	int connector_type;
@@ -401,11 +401,67 @@ static void fill_32bit_pixel_to_frame_buffer(void *fb_virtual_addr, int src_stri
 		}
 	}
 }
+static uint32_t find_overlay_plane_id(int drm_fd, char *function, char *sub_function)
+{
+	drmModePlaneRes *plane_res = drmModeGetPlaneResources(drm_fd);
+	if (!plane_res) {
+		perror("drmModeGetPlaneResources failed");
+		return 0;
+	}
+
+	uint32_t plane_id = 0;
+	for (uint32_t i = 0; i < plane_res->count_planes; i++) {
+		drmModePlane *plane = drmModeGetPlane(drm_fd, plane_res->planes[i]);
+		if (!plane) {
+			perror("drmModeGetPlane failed");
+			continue;
+		}
+		// printf("plane id %d (%d/%d)\n", plane->plane_id, i, plane_res->count_planes);
+
+		// Check if the plane type is Overlay
+		drmModeObjectProperties *props = drmModeObjectGetProperties(drm_fd, plane->plane_id, DRM_MODE_OBJECT_PLANE);
+		if (props) {
+			for (uint32_t j = 0; j < props->count_props; j++) {
+				drmModePropertyRes *prop = drmModeGetProperty(drm_fd, props->props[j]);
+
+				// printf("plane id %d, prop->name:%s\n", plane->plane_id, prop->name);
+				if (strcmp(prop->name, function) == 0) {
+					if(strcmp(function, "type") == 0){
+						for (uint32_t k = 0; k < prop->count_enums; k++) {
+							// printf("	%d prop->enums[%d].name:%s  %lld  %ld\n", plane->plane_id, k, prop->enums[k].name, prop->enums[k].value, props->prop_values[j]);
+							if (strcmp(prop->enums[k].name, sub_function) == 0 && prop->enums[k].value == props->prop_values[j]) {
+								plane_id = plane->plane_id;
+								break;
+							}
+						}
+					}else{
+						plane_id = plane->plane_id;
+					}
+				}
+				drmModeFreeProperty(prop);
+			}
+			drmModeFreeObjectProperties(props);
+		}
+
+		drmModeFreePlane(plane);
+
+		if (plane_id) {
+			break;
+		}
+	}
+
+	drmModeFreePlaneResources(plane_res);
+
+	if (plane_id == 0) {
+		printf("No suitable overlay plane found\n");
+	}
+	return plane_id;
+}
 
 int main(int argc, char** argv) {
 	display_context_t display_context = {
 		.crtc_id = 31,
-		.plane_id = 40, //只有id = 40 的plane 支持翻转
+		.plane_id = 33, //只有id = 40 的plane 支持翻转
 	};
 
 	param_config_t *param_config = &display_context.param_config;
@@ -435,6 +491,9 @@ int main(int argc, char** argv) {
 	if(ret != 0){
 		goto close_drm;
 	}
+
+	display_context.plane_id = find_overlay_plane_id(display_context.drm_fd, "rotation", NULL);
+	printf("Found plane id :%d\n", display_context.plane_id);
 
 	//3. clear the screen
 	drm_frame_buffer_info_t drm_fb_info_for_clear;

@@ -57,6 +57,8 @@ extern vp_sensor_config_t imx477_linear_4000x3000_raw12_10fps_2lane;
 extern vp_sensor_config_t sc035hgs_linear_640x480_raw10_30fps_2lane_vc0;
 extern vp_sensor_config_t sc035hgs_linear_640x480_raw10_30fps_2lane_vc1;
 extern vp_sensor_config_t sc231ai_linear_1920x1080_raw10_30fps_2lane;
+extern vp_sensor_config_t imx586_linear_3480x2160_raw10_30fps_4lane;
+extern vp_sensor_config_t os08c10_linear_3480x2160_raw12_30fps_2lane;
 
 vp_sensor_config_t *vp_sensor_config_list[] = {
 	&sc1330t_linear_1280x960_raw10_30fps_1lane,
@@ -87,6 +89,8 @@ vp_sensor_config_t *vp_sensor_config_list[] = {
 	&sc035hgs_linear_640x480_raw10_30fps_2lane_vc0,
 	&sc035hgs_linear_640x480_raw10_30fps_2lane_vc1,
 	&sc231ai_linear_1920x1080_raw10_30fps_2lane,
+	&imx586_linear_3480x2160_raw10_30fps_4lane,
+	&os08c10_linear_3480x2160_raw12_30fps_2lane,
 };
 
 uint32_t vp_get_sensors_list_number() {
@@ -103,6 +107,26 @@ void vp_show_sensors_list() {
 		vp_sensor_config_list[i]->config_file);
 	}
 }
+
+void vp_show_sensors_list_vse_limit(uint32_t width_limit, uint32_t height_limit)
+{
+	int num = 0;
+	int quarter_of_vse_max_resolution = width_limit * height_limit / 4;
+
+	num = vp_get_sensors_list_number();
+	for (int i = 0; i < num; i++) {
+		vp_sensor_config_t* sensor_config = vp_sensor_config_list[i];
+		int width_tmp = sensor_config->camera_config->width;
+		int height_tmp = sensor_config->camera_config->height;
+		if (width_tmp * height_tmp < quarter_of_vse_max_resolution) {
+			continue;
+		}
+		printf("index: %d  sensor_name: %-16s \tconfig_file:%s\n",
+			i, vp_sensor_config_list[i]->sensor_name,
+			vp_sensor_config_list[i]->config_file);
+	}
+}
+
 
 vp_sensor_config_t *vp_get_sensor_config_by_name(char *sensor_name)
 {
@@ -201,17 +225,14 @@ static int enable_sensor_pin(int gpio_number, int active)
 		return -1;
 	}
 
-	usleep(30 * 1000);
-
 	// Set GPIO direction to output
 	if (gpio_set_direction(gpio_number, "out") != 0) {
 		printf("Failed to set GPIO direction\n");
 		return -1;
 	}
 
-	usleep(30 * 1000);
-
 	/* gpio level should be keep same with sensor driver power_on api */
+
 	// Set GPIO value to active
 	if (gpio_set_value(gpio_number, active) != 0) {
 		printf("Failed to set GPIO value\n");
@@ -465,7 +486,8 @@ static int32_t read_chip_id(vcon_propertie_t vcon_props, vp_sensor_config_t *sen
 	if(sensor_config->chip_id >> 8 == 0) {
 		// 读取 8 位 chip ID
 		if (vp_i2c_read_reg16_data8(vcon_props.bus, addr, sensor_config->chip_id_reg, (uint8_t*)chip_id) == 0) {
-			if (((chip_id[0] & 0xFF) == (sensor_config->chip_id & 0xFF))) {
+			if ((sensor_config->chip_id == 0x005A) // 如果有的 sensor 本身读不到ID，但是又想要使用它，就把 sensor 的 chip_id 设为 0x005A
+			|| ((chip_id[0] & 0xFF) == (sensor_config->chip_id & 0xFF))) {
 				return 0;
 			}
 		}
@@ -706,13 +728,12 @@ void vp_sensor_detect_structed(csi_list_info_t *csi_list_info)
 
 		memset(csi_info_tmp.sensor_config_list, 0, sizeof(csi_info_tmp.sensor_config_list));
 		if (vcon_props_array[i].status[0] == 'o') {
-			if(!mclk_is_not_configed){
-				/* enable mclk */
-				write_mipi_host_freq(i, 24000000);
-				enable_mipi_host_clock(i, 1);
-			}
-
 			for (int j = 0; j < vp_get_sensors_list_number(); j++) {
+				if(!mclk_is_not_configed){
+					/* enable mclk */
+					write_mipi_host_freq(i, vp_sensor_config_list[j]->vin_attr_ex->mclk_ex_attr.mclk_freq);
+					enable_mipi_host_clock(i, 1);
+				}
 				for (int k = 0; k < 8; ++k) {
 					if (vcon_props_array[i].gpio_oth[k] != 0) {
 						if ((vp_sensor_config_list[j]->camera_config->gpio_enable_bit & (1 << k)) != 0) {
@@ -754,7 +775,7 @@ int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int u
 {
 	int32_t ret = -1, j = 0;
 	static int32_t i = 0;
-	uint32_t frequency = 24000000;
+	uint32_t frequency = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
 	int is_need_used_csi[VP_MAX_VCON_NUM] = {true, true, true, true};
 	should_used_csi(is_need_used_csi);
 
@@ -781,6 +802,11 @@ int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int u
 
 		// 如果该vcon使能了，检测该vcon上是否有连接 sensor
 		if (vcon_props_array[i].status[0] == 'o') { // okay
+			if(!mclk_is_not_configed){
+				/* enable mclk */
+				write_mipi_host_freq(i, frequency);
+				enable_mipi_host_clock(i, 1);
+			}
 			// 检测该vcon上连接的 sensor
 			/*enable gpio_oth, enable camera sensor gpio, maybe pwd/reset gpio */
 			for (j = 0; j < 8; ++j) {
@@ -791,12 +817,6 @@ int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int u
 							(1 - sensor_config->camera_config->gpio_level_bit));
 					}
 				}
-			}
-
-			if(!mclk_is_not_configed){
-				/* enable mclk */
-				write_mipi_host_freq(i, frequency);
-				enable_mipi_host_clock(i, 1);
 			}
 
 			// 从指定的vcon关联的i2c bus上读取 vp_sensor_config_list 中指定的 chip_id_reg 对应的寄存器值
@@ -820,7 +840,7 @@ int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int u
 int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config, vp_csi_config_t* csi_config)
 {
 	int32_t ret = 0, i = 0, j = 0;
-	uint32_t frequency = 24000000;
+	uint32_t frequency = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
 	int is_need_used_csi[VP_MAX_VCON_NUM] = {true, true, true, true};
 	should_used_csi(is_need_used_csi);
 
@@ -843,6 +863,12 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config, vp_csi_conf
 
 		// 如果该vcon使能了，检测该vcon上是否有连接 sensor
 		if (vcon_props_array[i].status[0] == 'o') { // okay
+			if(!mclk_is_not_configed){
+				/* enable mclk */
+				write_mipi_host_freq(i, frequency);
+				enable_mipi_host_clock(i, 1);
+
+			}
 			// 检测该vcon上连接的 sensor
 			/*enable gpio_oth, enable camera sensor gpio, maybe pwd/reset gpio */
 			for (j = 0; j < 8; ++j) {
@@ -855,12 +881,6 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config, vp_csi_conf
 				}
 			}
 
-			if(!mclk_is_not_configed){
-				/* enable mclk */
-				write_mipi_host_freq(i, frequency);
-				enable_mipi_host_clock(i, 1);
-
-			}
 			// 从指定的vcon关联的i2c bus上读取 vp_sensor_config_list 中指定的 chip_id_reg 对应的寄存器值
 			ret = check_sensor_reg_value(vcon_props_array[i], sensor_config);
 			if (ret == 0) {

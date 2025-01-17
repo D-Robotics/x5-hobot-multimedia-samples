@@ -66,6 +66,7 @@ typedef struct {
 } bpu_tensor_info_t;
 
 #define BPU_INPUT_BUFFER_NUM 5
+#define BPU_OUTPUT_BUFFER_NUM 5
 
 typedef struct {
 	int32_t				m_vpp_id; // vedio pipeline id
@@ -81,6 +82,8 @@ typedef struct {
 	tsQueue				m_output_queue; // 算法输出结果队列，yolo5的后处理时间太长了，用线程分开处理
 	bpu_post_process_callback	callback; // 算法结果处理后的回调，目前直接通过websocket发给web
 	void				*m_userdata; // 回调函数中使用到的数据
+	// int output_buffer_count;
+	// int input_buffer_count;
 } bpu_handle_t;
 
 int32_t bpu_wrap_get_model_list(char *model_list);
@@ -105,4 +108,17 @@ int32_t bpu_wrap_general_result_handle(char *result, void *userdata);
 
 void print_bpu_buffer_info(const bpu_buffer_info_t *buffer_info);
 
+#define BPU_MAX_DIMENSION 32
+typedef struct {
+	int is_enable;
+
+	char model_name[64];
+	int input_width;
+	int input_height;
+
+	int output_dimension;
+	int output_size[BPU_MAX_DIMENSION];
+}bpu_model_user_info_t;
+int32_t bpu_wrap_get_model_user_info(char *model_name,
+	bpu_model_user_info_t *dimensions_info);
 #endif // BPU_WRAP_H_

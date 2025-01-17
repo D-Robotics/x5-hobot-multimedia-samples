@@ -41,7 +41,7 @@
 #include <xf86drmMode.h>
 #include <drm_fourcc.h>
 
-#define DRM_MAX_PLANES 3 // 只有3个图层支持 融合
+#define DRM_MAX_BLEND_PLANES 3 // 只有3个图层支持 融合
 
 typedef struct param_config_s{
 	int width;
@@ -59,7 +59,7 @@ typedef struct display_context_s
 	int drm_fd;
 
 	const uint32_t crtc_id;
-	const uint32_t plane_ids[DRM_MAX_PLANES];
+	uint32_t plane_ids[DRM_MAX_BLEND_PLANES];
 	uint32_t connector_id;
 	int connector_type;
 
@@ -429,7 +429,65 @@ free_res:
 	drmModeFreeResources(resources);
 	return ret;
 }
+static int find_plane_ids(int drm_fd, char *function, char *sub_function, uint32_t* plane_ids, int count)
+{
+	drmModePlaneRes *plane_res = drmModeGetPlaneResources(drm_fd);
+	if (!plane_res) {
+		perror("drmModeGetPlaneResources failed");
+		return 0;
+	}
 
+	int found_index = 0;
+	for (uint32_t i = 0; i < plane_res->count_planes; i++) {
+		drmModePlane *plane = drmModeGetPlane(drm_fd, plane_res->planes[i]);
+		if (!plane) {
+			perror("drmModeGetPlane failed");
+			continue;
+		}
+		// printf("plane id %d (%d/%d)\n", plane->plane_id, i, plane_res->count_planes);
+
+		// Check if the plane type is Overlay
+		drmModeObjectProperties *props = drmModeObjectGetProperties(drm_fd, plane->plane_id, DRM_MODE_OBJECT_PLANE);
+		if (props) {
+			for (uint32_t j = 0; j < props->count_props; j++) {
+				drmModePropertyRes *prop = drmModeGetProperty(drm_fd, props->props[j]);
+
+				// printf("plane id %d, prop->name:%s\n", plane->plane_id, prop->name);
+				if (strcmp(prop->name, function) == 0) {
+					if(strcmp(function, "type") == 0){
+						for (uint32_t k = 0; k < prop->count_enums; k++) {
+							// printf("	%d prop->enums[%d].name:%s  %lld  %ld\n", plane->plane_id, k, prop->enums[k].name, prop->enums[k].value, props->prop_values[j]);
+							if (strcmp(prop->enums[k].name, sub_function) == 0 && prop->enums[k].value == props->prop_values[j]) {
+								plane_ids[found_index] = plane->plane_id;
+								found_index++;
+								break;
+							}
+						}
+					}else{
+						plane_ids[found_index] = plane->plane_id;
+						found_index++;
+					}
+				}
+				drmModeFreeProperty(prop);
+			}
+			drmModeFreeObjectProperties(props);
+		}
+
+		drmModeFreePlane(plane);
+
+		if(found_index >= count){
+			break;
+		}
+	}
+
+	drmModeFreePlaneResources(plane_res);
+
+	if (found_index != count) {
+		printf("No plane found (%d/%d)\n", found_index, count);
+		return -1;
+	}
+	return 0;
+}
 int main(int argc, char** argv) {
 	display_context_t display_context = {
 		.crtc_id = 31,
@@ -463,9 +521,21 @@ int main(int argc, char** argv) {
 	if(ret != 0){
 		goto close_drm;
 	}
+	ret = find_plane_ids(display_context.drm_fd, "pixel blend mode", NULL,
+		display_context.plane_ids, DRM_MAX_BLEND_PLANES);
+	if(ret != 0){
+		printf("found blend plane failed.\n");
+		return -1;
+	}
 
-	drm_frame_buffer_info_t drm_fb_info[DRM_MAX_PLANES];
-	for(int i = 0; i < DRM_MAX_PLANES; i++){
+	for (int i = 0; i < DRM_MAX_BLEND_PLANES; i++){
+		printf("Found plane id : %d, %d\n", i, display_context.plane_ids[i]);
+	}
+
+
+
+	drm_frame_buffer_info_t drm_fb_info[DRM_MAX_BLEND_PLANES];
+	for(int i = 0; i < DRM_MAX_BLEND_PLANES; i++){
 		ret = __create_and_mmap_drm_frame_buffer(display_context.drm_fd, DRM_FORMAT_ARGB8888,
 			display_context.width, display_context.height, &drm_fb_info[i]);
 		if(ret != 0){
@@ -473,7 +543,7 @@ int main(int argc, char** argv) {
 		}
 	}
 
-	for(int i = 0; i < DRM_MAX_PLANES; i++){
+	for(int i = 0; i < DRM_MAX_BLEND_PLANES; i++){
 		uint32_t color = 0xFFF0F0F0;
 		uint32_t *buffer_vaddr = (uint32_t *)drm_fb_info[i].frame_buffer_vaddr;
 		for(int j = 0; j < drm_fb_info->frame_buffer_size / 4; j++){
@@ -493,9 +563,9 @@ int main(int argc, char** argv) {
 	if(rect_start_y < 0){
 		rect_start_y = 0;
 	}
-	uint32_t colors[DRM_MAX_PLANES] = {0XFFFF0000 /*red*/, 0XFF00FF00 /*green*/, 0XFF0000FF /*blue*/};
+	uint32_t colors[DRM_MAX_BLEND_PLANES] = {0XFFFF0000 /*red*/, 0XFF00FF00 /*green*/, 0XFF0000FF /*blue*/};
 
-	for(int i = 0; i < DRM_MAX_PLANES; i++){
+	for(int i = 0; i < DRM_MAX_BLEND_PLANES; i++){
 		uint32_t color = colors[i];
 		uint32_t *buffer_vaddr = (uint32_t *)drm_fb_info[i].frame_buffer_vaddr;
 		for(int c = 0; c < rect_height; c++){
@@ -544,7 +614,7 @@ int main(int argc, char** argv) {
 	drmModeAtomicReq* req = NULL;
 
 	req = drmModeAtomicAlloc();
-	for(int i = 0; i < DRM_MAX_PLANES; i++){
+	for(int i = 0; i < DRM_MAX_BLEND_PLANES; i++){
 		ret = __add_property(display_context.drm_fd, req, display_context.plane_ids[i], DRM_MODE_OBJECT_PLANE, "CRTC_ID", display_context.crtc_id);
 		ret |= __add_property(display_context.drm_fd, req, display_context.plane_ids[i], DRM_MODE_OBJECT_PLANE, "FB_ID", drm_fb_info[i].frame_buffer_id);
 		if(display_context.plane_ids[i] == 40){
@@ -582,7 +652,7 @@ free_req:
 	while(1){
 		sleep(3);
 	}
-	for(int i = 0; i< DRM_MAX_PLANES; i++){
+	for(int i = 0; i< DRM_MAX_BLEND_PLANES; i++){
 		__destroy_and_unmmap_drm_frame_buffer(display_context.drm_fd, &drm_fb_info[i]);
 	}
 

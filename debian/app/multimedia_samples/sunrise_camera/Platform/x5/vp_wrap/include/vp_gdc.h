@@ -45,6 +45,7 @@ int32_t vp_gdc_send_frame(vp_vflow_contex_t *vp_vflow_contex, hbn_vnode_image_t 
 
 const char *vp_gdc_get_bin_file(const char *sensor_name);
 
+int get_gdc_config_file_size(const char *sensor_name);
 #ifdef __cplusplus
 }
 #endif /* extern "C" */

@@ -170,13 +170,14 @@ static int drm_setup_kms(vp_drm_context_t *ctx)
 		return -1;
 	}
 
+	float fps = 30.0;
 	drmModeModeInfo *mode = NULL;
 	for (int i = 0; i < connector->count_modes; i++)
 	{
 		if (connector->modes[i].hdisplay == ctx->width && connector->modes[i].vdisplay == ctx->height)
 		{
 			mode = &connector->modes[i];
-			float fps = __mode_vrefresh(mode);
+			fps = __mode_vrefresh(mode);
 			printf("fps:%f\n", fps);
 			if((fps <= 31.00) && (fps >= 28.00)){
 				printf("select %f\n", fps);
@@ -216,6 +217,12 @@ static int drm_setup_kms(vp_drm_context_t *ctx)
 		drmModeFreeConnector(connector);
 		drmModeFreeResources(resources);
 		return -1;
+	}
+
+	if((fps > 31.00) || (fps < 28.00)){
+		mode = &connector->modes[0];
+		fps = __mode_vrefresh(mode);
+		printf("not found suitable mode, use fist mode, fps: %f.\n", fps);
 	}
 
 	drmModeAtomicReq *req = drmModeAtomicAlloc();
@@ -333,7 +340,7 @@ static drmModeConnector* find_connector(int fd)
 static void drm_init_config(vp_drm_context_t *drm_ctx, int32_t width, int32_t height)
 {
 	memset(drm_ctx, 0, sizeof(vp_drm_context_t));
-	drm_ctx->crtc_id = 31;//63; //31
+	drm_ctx->crtc_id = 63; //31
 	drm_ctx->connector_id = 75;
 	drm_ctx->width = width;
 	drm_ctx->height = height;
@@ -342,7 +349,7 @@ static void drm_init_config(vp_drm_context_t *drm_ctx, int32_t width, int32_t he
 
 	for (int i = 0; i < drm_ctx->plane_count; i++)
 	{
-		drm_ctx->planes[i].plane_id = 33; //64; //33
+		drm_ctx->planes[i].plane_id = 64; //33
 		drm_ctx->planes[i].src_w = width;
 		drm_ctx->planes[i].src_h = height;
 		drm_ctx->planes[i].crtc_x = 0;
@@ -735,6 +742,17 @@ int32_t vp_display_wait_blank(vp_drm_context_t *drm_ctx){
 
 	return 0;
 }
+static uint64_t get_timestamp_ms()
+{
+	uint64_t timestamp;
+	struct timeval ts;
+
+	gettimeofday(&ts, NULL);
+	timestamp = (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_usec / 1000;
+	return timestamp;
+}
+
+
 int32_t vp_display_set_frame(vp_drm_context_t *drm_ctx,
 	hb_mem_graphic_buf_t *image_frame)
 {
@@ -773,8 +791,12 @@ int32_t vp_display_set_frame(vp_drm_context_t *drm_ctx,
 		add_property(drm_ctx->drm_fd, req, drm_ctx->planes[i].plane_id,
 			DRM_MODE_OBJECT_PLANE, "FB_ID", fb_id);
 	}
-
+	uint64_t start_ms = get_timestamp_ms();
 	ret = drmModeAtomicCommit(drm_ctx->drm_fd, req, flags, NULL);
+	uint64_t end_ms = get_timestamp_ms();
+	if(0){
+		printf("dff :%ldms\n", end_ms - start_ms);
+	}
 
 	if (ret < 0)
 	{

@@ -33,7 +33,7 @@ int32_t vp_osd_start(vp_vflow_contex_t *vp_vflow_contex);
 int32_t vp_osd_stop(vp_vflow_contex_t *vp_vflow_contex);
 int32_t vp_osd_deinit(vp_vflow_contex_t *vp_vflow_contex);
 
-int32_t vp_osd_draw_world(vp_vflow_contex_t *vp_vflow_contex, hbn_rgn_handle_t handle, char *str);
+int32_t vp_osd_draw_world(vp_vflow_contex_t *vp_vflow_contex, int index, char *str);
 #ifdef __cplusplus
 }
 #endif /* extern "C" */

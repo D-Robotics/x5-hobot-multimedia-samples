@@ -55,8 +55,8 @@ int32_t vp_vin_init(vp_vflow_contex_t *vp_vflow_contex)
 		SC_LOGI("csi%d ignore mclk ex attr, because mclk is not configed at device tree.",
 			vp_vflow_contex->mipi_csi_rx_index);
 	}else{
-		vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000; // 24MHz
-		vin_attr_ex.vin_attr_ex_mask = 0x80;
+		vin_attr_ex.vin_attr_ex_mask = sensor_config->vin_attr_ex->vin_attr_ex_mask;
+		vin_attr_ex.mclk_ex_attr.mclk_freq = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
 		vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
 	}
 
@@ -87,7 +87,7 @@ int32_t vp_vin_init(vp_vflow_contex_t *vp_vflow_contex)
 			SC_ERR_CON_EQ(ret, 0, "hbn_vnode_set_attr_ex");
 		}
 	}
-	alloc_attr.buffers_num = 3;
+	alloc_attr.buffers_num = vp_vflow_contex->vin_info.ochn_buffer_count;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
 						| HB_MEM_USAGE_CPU_WRITE_OFTEN

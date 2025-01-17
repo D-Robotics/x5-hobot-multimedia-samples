@@ -55,6 +55,23 @@ static gdc_list_info_t g_gdc_list_info[] = {
         .is_valid = -1
     }
 };
+int get_gdc_config_file_size(const char *sensor_name){
+    const char* gdc_bin_file = vp_gdc_get_bin_file(sensor_name);
+	if(gdc_bin_file == NULL){
+		SC_LOGE("%s is enable gdc, but gdc bin file is not set.", sensor_name);
+		return -1;
+	}
+	FILE *fp = fopen(gdc_bin_file, "r");
+	if (fp == NULL) {
+		SC_LOGE("File %s open failed\n", gdc_bin_file);
+		return -1;
+	}
+	fseek(fp, 0, SEEK_END);
+	long file_size = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
+	fclose(fp);
+	return file_size;
+}
 
 static int get_gdc_config(const char *gdc_bin_file, hb_mem_common_buf_t *bin_buf) {
 	int64_t alloc_flags = 0;
@@ -197,7 +214,7 @@ int32_t vp_gdc_init(vp_vflow_contex_t *vp_vflow_contex){
 		return -1;
 	}
 	hbn_buf_alloc_attr_t alloc_attr = {0};
-	alloc_attr.buffers_num = 3;
+	alloc_attr.buffers_num = vp_vflow_contex->gdc_info.output_buffer_count;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN |
 					HB_MEM_USAGE_CPU_WRITE_OFTEN |

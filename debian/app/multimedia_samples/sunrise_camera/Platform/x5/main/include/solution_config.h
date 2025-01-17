@@ -86,6 +86,7 @@ int32_t solution_cfg_save();
 char* solution_cfg_obj2string();
 void solution_cfg_string2obj(char *in);
 int32_t solution_cfg_update_camera_config();
+void solution_cfg_string2obj_width_param(char *in, solution_cfg_t *solution_cfg);
 
 extern int32_t g_solution_cfg_is_load;
 extern solution_cfg_t g_solution_config;

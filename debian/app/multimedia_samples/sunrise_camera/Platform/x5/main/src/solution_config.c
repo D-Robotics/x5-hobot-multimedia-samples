@@ -548,6 +548,11 @@ char *solution_cfg_obj2string()
 	return cjson_object2string(solution_cfg_key, (void *)&g_solution_config);
 }
 
+void solution_cfg_string2obj_width_param(char *in, solution_cfg_t *solution_cfg)
+{
+	cjson_string2object(solution_cfg_key, in, solution_cfg);
+}
+
 void solution_cfg_string2obj(char *in)
 {
 	cjson_string2object(solution_cfg_key, in, &g_solution_config);

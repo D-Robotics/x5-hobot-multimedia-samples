@@ -214,6 +214,63 @@ teQueueStatus mQueueDequeueTimed(tsQueue *psQueue, uint32_t u32WaitTimeMil, void
 	pthread_mutex_unlock(&psQueue->mutex);
 	return E_QUEUE_OK;
 }
+teQueueStatus mQueueDequeueTimedWidthUserFunc(tsQueue *psQueue, uint32_t u32WaitTimeMil,
+	void **ppvData, queue_process_func_width_user_t process_func_cb, void *handle, int user_flag){
+
+	teQueueStatus ret_status = E_QUEUE_OK;
+	pthread_mutex_lock(&psQueue->mutex);
+	while (psQueue->u32Front == psQueue->u32Rear){
+		struct timeval sNow;
+		struct timespec sTimeout;
+
+		memset(&sNow, 0, sizeof(struct timeval));
+		gettimeofday(&sNow, NULL);
+		sTimeout.tv_sec = sNow.tv_sec + (u32WaitTimeMil/1000);
+		sTimeout.tv_nsec = (sNow.tv_usec + ((u32WaitTimeMil % 1000) * 1000)) * 1000;
+		if (sTimeout.tv_nsec > 1000000000)
+		{
+			sTimeout.tv_sec++;
+			sTimeout.tv_nsec -= 1000000000;
+		}
+		/*printf("Dequeue timed: now    %lu s, %lu ns\n", sNow.tv_sec, sNow.tv_usec * 1000);*/
+		/*printf("Dequeue timed: until  %lu s, %lu ns\n", sTimeout.tv_sec, sTimeout.tv_nsec);*/
+
+		switch (pthread_cond_timedwait(&psQueue->cond_data_available, &psQueue->mutex, &sTimeout))
+		{
+			case (0):
+				break;
+
+			case (ETIMEDOUT):
+				pthread_mutex_unlock(&psQueue->mutex);
+				return E_QUEUE_ERROR_TIMEOUT;
+				break;
+
+			default:
+				pthread_mutex_unlock(&psQueue->mutex);
+				return E_QUEUE_ERROR_FAILED;
+		}
+	}
+	*ppvData = psQueue->apvBuffer[psQueue->u32Front];
+
+	int need_release = 1;
+	if(process_func_cb){
+		need_release = process_func_cb(*ppvData, handle, user_flag);
+	}
+
+	if(need_release == 1){
+		psQueue->u32Front = (psQueue->u32Front + 1) % psQueue->u32Length;
+		pthread_cond_broadcast(&psQueue->cond_space_available);
+	}else if(need_release == -1){
+		ret_status = E_QUEUE_ERROR_REPEAT;
+	}else{
+		ret_status = E_QUEUE_OK;
+	}
+
+	pthread_mutex_unlock(&psQueue->mutex);
+
+	return ret_status;
+}
+
 teQueueStatus mQueueDequeueTimedWidthFunc(tsQueue *psQueue, uint32_t u32WaitTimeMil,
 	void **ppvData, queue_process_func_t process_func_cb, void *handle){
 

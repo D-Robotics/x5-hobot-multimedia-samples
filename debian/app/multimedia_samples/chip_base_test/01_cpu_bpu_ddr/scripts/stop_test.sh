@@ -1,2 +1,4 @@
-killall -9 stressapptest
-killall -9 tc_hbdk3
+#!/bin/sh
+
+pkill -f stressapptest
+pkill -f tc_hbdk3

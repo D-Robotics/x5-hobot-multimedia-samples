@@ -29,21 +29,25 @@
 
 #include "vp_wrap.h"
 #include "vp_osd.h"
-#define OSD_MAX_CHANNLE 1
 
-static int region_init(vp_vflow_contex_t *vp_vflow_contex, int width, int height){
+static int region_init(vp_vflow_contex_t *vp_vflow_contex){
 
-    hbn_rgn_attr_t region;
-    region.type = OVERLAY_RGN;
-	region.color = FONT_COLOR_ORANGE;
-	region.alpha = 0;
-	region.overlay_attr.size.width = width;
-	region.overlay_attr.size.height = height;
-	region.overlay_attr.pixel_fmt = PIXEL_FORMAT_VGA_8;
+	int osd_valid_region_count = vp_vflow_contex->osd_info.valid_osd_region_count;
 
-	SC_LOGI("osd region init %d*%d.", width, height);
-    for (int i = 0; i < OSD_MAX_CHANNLE; i++) {
-		hbn_rgn_handle_t rgn_handle = i;
+    for (int i = 0; i < osd_valid_region_count; i++) {
+		hbn_rgn_handle_t rgn_handle = vp_vflow_contex->osd_info.handle[i];
+		hbn_rgn_attr_t region;
+
+		int width = vp_vflow_contex->osd_info.position[i].width;
+		int height = vp_vflow_contex->osd_info.position[i].height;
+		region.type = OVERLAY_RGN;
+		region.color = FONT_COLOR_ORANGE;
+		region.alpha = 0;
+		region.overlay_attr.size.width = width;
+		region.overlay_attr.size.height = height;
+		region.overlay_attr.pixel_fmt = PIXEL_FORMAT_VGA_8;
+
+		SC_LOGI("osd region init %d :%d*%d.", width, height);
 		//VSE硬件上最多支持4块OSD，其他多余的OSD通过软件操作图像数据完成。
 		int ret = hbn_rgn_create(rgn_handle, &region);
         if(ret != 0){
@@ -51,10 +55,12 @@ static int region_init(vp_vflow_contex_t *vp_vflow_contex, int width, int height
             return -1;
         }
 	}
-    for (int i = 0; i < OSD_MAX_CHANNLE; i++) {
+    for (int i = 0; i < osd_valid_region_count; i++) {
         hbn_rgn_bitmap_t *bitmap_p = &(vp_vflow_contex->osd_info.bitmap[i]);
+		int width = vp_vflow_contex->osd_info.position[i].width;
+		int height = vp_vflow_contex->osd_info.position[i].height;
 
-        int32_t size = width * height;
+	    int32_t size = width * height;
         memset(bitmap_p, 0, sizeof(hbn_rgn_bitmap_t));
         bitmap_p->pixel_fmt = PIXEL_FORMAT_VGA_8;
         bitmap_p->size.width = width;
@@ -69,19 +75,22 @@ static int region_init(vp_vflow_contex_t *vp_vflow_contex, int width, int height
     return 0;
 }
 
-static int channel_attr_init(vp_vflow_contex_t *vp_vflow_contex, int x, int y){
+static int channel_attr_init(vp_vflow_contex_t *vp_vflow_contex){
     int vse_vnode_fd = vp_vflow_contex->vse_node_handle;
+	int osd_valid_region_count = vp_vflow_contex->osd_info.valid_osd_region_count;
 
-    hbn_rgn_chn_attr_t chn_attr = {0};
-    memset(&chn_attr, 0, sizeof(hbn_rgn_chn_attr_t));
-    chn_attr.show = true;
-	chn_attr.invert_en = 0;
-	chn_attr.display_level = 0;
-	chn_attr.point.x = x;
-	chn_attr.point.y = y;
 
-	for (int i = 0; i < OSD_MAX_CHANNLE; i++) {
-		hbn_rgn_handle_t rgn_handle = i;
+	for (int i = 0; i < osd_valid_region_count; i++) {
+		hbn_rgn_handle_t rgn_handle = vp_vflow_contex->osd_info.handle[i];
+
+		hbn_rgn_chn_attr_t chn_attr = {0};
+		memset(&chn_attr, 0, sizeof(hbn_rgn_chn_attr_t));
+		chn_attr.show = true;
+		chn_attr.invert_en = 0;
+		chn_attr.display_level = 0;
+		chn_attr.point.x = vp_vflow_contex->osd_info.position[i].x;
+		chn_attr.point.y = vp_vflow_contex->osd_info.position[i].y;
+
 		/*
 			1. region 和 VSE 绑定
 			2. rgn_handle: 函数region_init中初始化中 rgn_handle从0开始
@@ -92,17 +101,19 @@ static int channel_attr_init(vp_vflow_contex_t *vp_vflow_contex, int x, int y){
             return -1;
         }
 	}
+
     return 0;
 }
 
 int32_t vp_osd_init(vp_vflow_contex_t *vp_vflow_contex)
 {
 	int32_t ret = 0;
-    ret = region_init(vp_vflow_contex, 320, 200);
+    ret = region_init(vp_vflow_contex); //320, 200
     if(ret != 0){
         return -1;
     }
-    ret = channel_attr_init(vp_vflow_contex, 50, 50);
+	//(50, 50): 起始点坐标
+    ret = channel_attr_init(vp_vflow_contex);
       if(ret != 0){
         return -1;
     }
@@ -113,9 +124,11 @@ int32_t vp_osd_init(vp_vflow_contex_t *vp_vflow_contex)
 
 int32_t vp_osd_deinit(vp_vflow_contex_t *vp_vflow_contex)
 {
+	int osd_valid_region_count = vp_vflow_contex->osd_info.valid_osd_region_count;
+
     int vse_vnode_fd = vp_vflow_contex->vse_node_handle;
-    for (int i = 0; i < OSD_MAX_CHANNLE; i++) {
-		hbn_rgn_handle_t rgn_handle = i;
+    for (int i = 0; i < osd_valid_region_count; i++) {
+		hbn_rgn_handle_t rgn_handle = vp_vflow_contex->osd_info.handle[i];
 		hbn_rgn_detach_from_chn(rgn_handle, vse_vnode_fd, i);
 		hbn_rgn_destroy(rgn_handle);
 
@@ -144,14 +157,17 @@ int32_t vp_osd_stop(vp_vflow_contex_t *vp_vflow_contex)
 	SC_LOGD("successful");
 	return ret;
 }
-int32_t vp_osd_draw_world(vp_vflow_contex_t *vp_vflow_contex, hbn_rgn_handle_t handle, char *str){
+int32_t vp_osd_draw_world(vp_vflow_contex_t *vp_vflow_contex, int osd_index, char *str){
 
-    int osd_index = handle;
-    if((osd_index < 0) || (osd_index > sizeof(vp_vflow_contex->osd_info.bitmap) / sizeof(hbn_rgn_bitmap_t))){
-        SC_LOGE("osd draw world failed, handle is invalid %d.", handle);
+	int osd_valid_region_count = vp_vflow_contex->osd_info.valid_osd_region_count;
+
+    if((osd_index < 0) || (osd_index >= osd_valid_region_count)){
+        SC_LOGE("osd draw world failed, handle is invalid %d, osd region count is %d.",
+			osd_index, osd_valid_region_count);
         return -1;
     }
 
+	hbn_rgn_handle_t handle = vp_vflow_contex->osd_info.handle[osd_index];
     hbn_rgn_bitmap_t *bitmap_p = &(vp_vflow_contex->osd_info.bitmap[osd_index]);
     hbn_rgn_draw_word_t draw_word = {0};
 	draw_word.font_size = FONT_SIZE_MEDIUM;
@@ -166,17 +182,17 @@ int32_t vp_osd_draw_world(vp_vflow_contex_t *vp_vflow_contex, hbn_rgn_handle_t h
 	draw_word.paddr = bitmap_p->paddr;
 	draw_word.size = bitmap_p->size;
 
-	//用户申请好的buffer(malloc)上画字
+	//用户申请好的buffer(malloc)上画字, 纯软件的操作
     int ret = hbn_rgn_draw_word(&draw_word);
     if(ret != 0){
-        SC_LOGE("osd draw world for channel %d failed.", osd_index);
+        SC_LOGE("osd draw world for channel %d failed.", handle);
         return -1;
     }
 
 	//将bitmap 中的数据，拷贝到物理内存中
     ret = hbn_rgn_setbitmap(handle, bitmap_p);
     if(ret != 0){
-        SC_LOGE("osd set bitmap for channel %d failed.", osd_index);
+        SC_LOGE("osd set bitmap for channel %d failed.", handle);
         return -1;
     }
     return 0;

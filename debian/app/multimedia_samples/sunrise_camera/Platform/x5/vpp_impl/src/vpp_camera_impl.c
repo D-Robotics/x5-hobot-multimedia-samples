@@ -39,6 +39,8 @@
 #include "utils/mqueue.h"
 #include "utils/time_utils.h"
 
+#include "model_info.h"
+
 #include "bpu_wrap.h"
 #include "vp_wrap.h"
 #include "vp_codec.h"
@@ -46,9 +48,6 @@
 #include "vp_display.h"
 
 #include "vp_gdc.h"
-
-#include "solution_handle.h"
-#include "solution_config.h"
 
 #include "vpp_preparam.h"
 #include "vpp_camera_impl.h"
@@ -63,6 +62,8 @@ typedef struct
 	int drm_init_succesed;
 	vp_drm_context_t *drm_context;
 	vp_vflow_contex_t vp_vflow_contex;
+
+	media_codec_user_config_t m_encode_user_config;
 	media_codec_context_t m_encode_context;
 
 	bpu_handle_t	m_bpu_handle;
@@ -75,6 +76,8 @@ typedef struct
 
 	int vse_buffer_used_count;
 	tsThread		m_bpu_thread;
+
+	bpu_model_user_info_t bpu_model_user_info;
 } vpp_camera_t;
 
 static vp_drm_context_t g_drm_context;
@@ -355,7 +358,7 @@ static void *send_yuv_to_bpu(void *ptr) {
 	return NULL;
 }
 
-int32_t vpp_camera_init_param(void)
+int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 {
 	int32_t i = 0, ret = 0;
 
@@ -363,7 +366,6 @@ int32_t vpp_camera_init_param(void)
 	isp_ichn_attr_t *isp_ichn_attr = NULL;
 	vse_config_t *vse_config = NULL;
 	int32_t input_width = 0, input_height = 0;
-	int32_t model_width = 0, model_height = 0;
 
 	memset(&g_vpp_camera, 0, sizeof(g_vpp_camera));
 
@@ -372,7 +374,7 @@ int32_t vpp_camera_init_param(void)
 	}
 	int vpp_camera_index = 0;
 	int hdmi_display_channel = -1;
-	int pipeline_count = g_solution_config.cam_solution.pipeline_count;
+	int pipeline_count =solution_cfg->cam_solution.pipeline_count;
 	int hdmi_is_connected = vp_display_check_hdmi_is_connected();
 	if(hdmi_is_connected){
 		SC_LOGI("hdmi is connected");
@@ -381,19 +383,19 @@ int32_t vpp_camera_init_param(void)
 	}
 
 	// 根据camera solution的配置设置vin、vse、venc、bpu模块的使能和参数
-	for (i = 0; i < g_solution_config.cam_solution.max_pipeline_count; i++) {
+	for (i = 0; i <solution_cfg->cam_solution.max_pipeline_count; i++) {
 		// 1. 配置 vin
-		if(g_solution_config.cam_solution.cam_vpp[i].is_valid == 0){
+		if(solution_cfg->cam_solution.cam_vpp[i].is_valid == 0){
 			continue;
 		}
-		char* sensor_name = g_solution_config.cam_solution.cam_vpp[i].sensor;
-		if(g_solution_config.cam_solution.cam_vpp[i].is_enable == 0){
+		char* sensor_name =solution_cfg->cam_solution.cam_vpp[i].sensor;
+		if(solution_cfg->cam_solution.cam_vpp[i].is_enable == 0){
 			SC_LOGI("Ignore camera sensor [%s] [%d/%d].", sensor_name, i, pipeline_count);
 			continue;
 		}
-		g_vpp_camera[i].vp_vflow_contex.mipi_csi_rx_index = g_solution_config.cam_solution.cam_vpp[i].csi_index;
+		g_vpp_camera[i].vp_vflow_contex.mipi_csi_rx_index =solution_cfg->cam_solution.cam_vpp[i].csi_index;
 		g_vpp_camera[i].vp_vflow_contex.sensor_config = vp_get_sensor_config_by_name(sensor_name);
-		g_vpp_camera[i].vp_vflow_contex.mclk_is_not_configed = g_solution_config.cam_solution.cam_vpp[i].mclk_is_not_configed;
+		g_vpp_camera[i].vp_vflow_contex.mclk_is_not_configed =solution_cfg->cam_solution.cam_vpp[i].mclk_is_not_configed;
 
 		SC_LOGI("Enable camera sensor [%s] [%d/%d] mclk_is_not_configed:[%d]", sensor_name, i, pipeline_count,
 			g_vpp_camera[i].vp_vflow_contex.mclk_is_not_configed);
@@ -401,17 +403,23 @@ int32_t vpp_camera_init_param(void)
 			SC_LOGE("sensor name not found(%s)", sensor_name);
 			return -1;
 		}
+		g_vpp_camera[i].vp_vflow_contex.vin_info.ochn_buffer_count = 3;
+		g_vpp_camera[i].vp_vflow_contex.isp_info.ochn_buffer_count = 3;
+		g_vpp_camera[i].vp_vflow_contex.gdc_info.output_buffer_count = 3;
+
+		//isp
+		g_vpp_camera[i].vp_vflow_contex.sensor_config->isp_attr->input_mode = 2; // offline
 
 		// 2. 配置算法模型
-		if (strlen(g_solution_config.cam_solution.cam_vpp[i].model) > 1
-			&& strcmp(g_solution_config.cam_solution.cam_vpp[i].model, "null") != 0) {
+		if (strlen(solution_cfg->cam_solution.cam_vpp[i].model) > 1
+			&& strcmp(solution_cfg->cam_solution.cam_vpp[i].model, "null") != 0) {
 			//g_vpp_camera 与插入的摄像头的顺序一一对应
 			//m_vpp_id 与使能的摄像头一一对应
 			//比如插入了两个摄像头,只使能第二个: g_vpp_camera[0] 是空 g_vpp_camera[1]是有效的
 			// 					  			  m_vpp_id 为0 (决定了算法上报结果的通道号)
 			g_vpp_camera[i].m_bpu_handle.m_vpp_id = vpp_camera_index;
 			strncpy(g_vpp_camera[i].m_bpu_handle.m_model_name,
-				g_solution_config.cam_solution.cam_vpp[i].model,
+				solution_cfg->cam_solution.cam_vpp[i].model,
 				sizeof(g_vpp_camera[i].m_bpu_handle.m_model_name) - 1);
 			g_vpp_camera[i].m_bpu_handle.m_model_name[sizeof(g_vpp_camera[i].m_bpu_handle.m_model_name) - 1] = '\0';
 		}
@@ -445,42 +453,63 @@ int32_t vpp_camera_init_param(void)
 		vse_config->vse_ochn_attr[0].bit_width = 8;
 
 		// 第二个通道的数据给BPU使用
+		bpu_model_user_info_t *bpu_model_info = &g_vpp_camera[i].bpu_model_user_info;
+		bpu_model_info->is_enable = 0;
 		if (strlen(g_vpp_camera[i].m_bpu_handle.m_model_name) > 1
 			&& strcmp(g_vpp_camera[i].m_bpu_handle.m_model_name, "null") != 0) {
-			ret = bpu_wrap_get_model_hw(g_vpp_camera[i].m_bpu_handle.m_model_name, &model_width, &model_height);
-			if (model_width > input_width || model_height > input_height)
+			bpu_model_info->is_enable = 1;
+			ret = bpu_wrap_get_model_user_info(g_vpp_camera[i].m_bpu_handle.m_model_name, bpu_model_info);
+			if (bpu_model_info->input_width > input_width || bpu_model_info->input_height > input_height)
 				vse_chn = 5;
 			else
 				vse_chn = 1;
+			// ret = bpu_wrap_get_model_hw(g_vpp_camera[i].m_bpu_handle.m_model_name, &model_width, &model_height);
 			vse_config->vse_ochn_attr[vse_chn].chn_en = CAM_TRUE;
 			vse_config->vse_ochn_attr[vse_chn].roi.x = 0;
 			vse_config->vse_ochn_attr[vse_chn].roi.y = 0;
 			vse_config->vse_ochn_attr[vse_chn].roi.w = input_width;
 			vse_config->vse_ochn_attr[vse_chn].roi.h = input_height;
-			vse_config->vse_ochn_attr[vse_chn].target_w = model_width;
-			vse_config->vse_ochn_attr[vse_chn].target_h = model_height;
+			vse_config->vse_ochn_attr[vse_chn].target_w = bpu_model_info->input_width;
+			vse_config->vse_ochn_attr[vse_chn].target_h = bpu_model_info->input_height;
 			vse_config->vse_ochn_attr[vse_chn].fmt = FRM_FMT_NV12;
 			vse_config->vse_ochn_attr[vse_chn].bit_width = 8;
 		}
+		//配置OSD
+		osd_user_info_t *osd_info = &g_vpp_camera[i].vp_vflow_contex.osd_info;
+		osd_info->valid_osd_region_count = 1;
+		for (int j = 0; j < osd_info->valid_osd_region_count; j++){
+			osd_info->handle[j] = i * VP_MAX_OSD_REGION + j;
+			osd_info->position[j].x = 50;
+			osd_info->position[j].y = 50;
+			osd_info->position[j].width = 320;
+			osd_info->position[j].height = 200;
+		}
 
-		// 第三个通道的数据给显示器使用，默认 1080P
-		// 需要根据输入分辨率来设置不同的通道，待实现
-
-		// 配置编码通道
+		//codec
 		camera_config = g_vpp_camera[i].vp_vflow_contex.sensor_config->camera_config;
-		ret = vp_encode_config_param(&g_vpp_camera[i].m_encode_context,
-			VP_GET_MD_CODEC_TYPE(g_solution_config.cam_solution.cam_vpp[i].encode_type),
-			input_width, input_height, camera_config->fps,
-			g_solution_config.cam_solution.cam_vpp[i].encode_bitrate,
-			true);
+
+		media_codec_user_config_t *codec_user_config = &g_vpp_camera[i].m_encode_user_config;
+		codec_user_config->bit_rate = solution_cfg->cam_solution.cam_vpp[i].encode_bitrate;
+		codec_user_config->codec_type = VP_GET_MD_CODEC_TYPE(solution_cfg->cam_solution.cam_vpp[i].encode_type);
+		codec_user_config->frame_rate = camera_config->fps;
+		codec_user_config->width = input_width;
+		codec_user_config->height = input_height;
+
+		codec_user_config->input_buffer_is_extrenal = true;
+		codec_user_config->input_buffer_count = 0;
+		codec_user_config->output_buffer_count = 5;
+
+		ret = vp_encode_config_param(&g_vpp_camera[i].m_encode_context, codec_user_config);
 		if (ret != 0)
 		{
 			SC_LOGE("Encode config param error");
 		}
+
+		//gdc
 		g_vpp_camera[i].vp_vflow_contex.gdc_info.input_width = input_width;
 		g_vpp_camera[i].vp_vflow_contex.gdc_info.input_height = input_height;
 		strcpy(g_vpp_camera[i].vp_vflow_contex.gdc_info.sensor_name, sensor_name);
-		g_vpp_camera[i].vp_vflow_contex.gdc_info.status = g_solution_config.cam_solution.cam_vpp[i].gdc_status;
+		g_vpp_camera[i].vp_vflow_contex.gdc_info.status = solution_cfg->cam_solution.cam_vpp[i].gdc_status;
 
 		if((hdmi_is_connected) && (hdmi_display_channel == -1)){
 
@@ -493,6 +522,250 @@ int32_t vpp_camera_init_param(void)
 	}
 
 	return ret;
+}
+int32_t vpp_camera_init_param(void){
+	return vpp_camera_init_param_full(&g_solution_config);
+}
+
+int32_t vpp_init_ion_pipeline_param_from_vflow_contex(vp_vflow_contex_t *vp_vflow_contex,
+	media_codec_user_config_t *codec_user_config, bpu_model_user_info_t *bpu_config,
+	vp_ion_pipeline_param_t *ion_param){
+
+	memset(ion_param, 0, sizeof(vp_ion_pipeline_param_t));
+	//vin
+	vp_ion_buffer_param_t *vin = &ion_param->vin;
+	vp_sensor_config_t *vp_sensor_config = vp_vflow_contex->sensor_config;
+	if(vp_sensor_config == NULL){
+		SC_LOGE("vp_sensor_config is null.");
+		return -1;
+	}
+	vin->format = ION_BUFFER_RAW10;
+
+	vin->width = vp_sensor_config->vin_ichn_attr->width;
+	vin->height = vp_sensor_config->vin_ichn_attr->height;
+
+	vin->count = vp_vflow_contex->vin_info.ochn_buffer_count;
+
+	//isp
+	vp_ion_buffer_param_t *isp = &ion_param->isp;
+	isp->width = vp_sensor_config->isp_ichn_attr->width;
+	isp->height = vp_sensor_config->isp_ichn_attr->height;
+	isp->format = ION_BUFFER_NV12; //vp_sensor_config->isp_ochn_attr.fmt
+	isp->count = vp_vflow_contex->isp_info.ochn_buffer_count;
+
+	//vse
+	ion_param->vse_valid_count = 0;
+	vse_config_t *vse_config = &vp_vflow_contex->vse_config;
+	for(int i = 0; i< VSE_MAX_CHANNLE; i++){
+		if(vse_config->vse_ochn_attr[i].chn_en == CAM_TRUE){
+			vp_ion_buffer_param_t *vse = &ion_param->vse[ion_param->vse_valid_count];
+			vse->width = vse_config->vse_ochn_attr[i].target_h;
+			vse->height = vse_config->vse_ochn_attr[i].target_w;
+			vse->format = ION_BUFFER_NV12;
+			vse->count = vse_config->vse_ochn_buffer_count;
+			ion_param->vse_valid_count++;
+		}
+	}
+
+	//gdc
+	gdc_user_info_t *gdc_info = &vp_vflow_contex->gdc_info;
+	if(gdc_info->status == GDC_STATUS_OPEN){
+		vp_ion_buffer_param_t *gdc = &ion_param->gdc;
+		gdc->width = gdc_info->input_width;
+		gdc->height = gdc_info->input_height;
+		gdc->format = ION_BUFFER_NV12;
+		gdc->count = gdc_info->output_buffer_count;
+
+		int gdc_file_size = get_gdc_config_file_size(vp_vflow_contex->gdc_info.sensor_name);
+		if(gdc_file_size != -1){
+			ion_param->gdc_bin_file_size = gdc_file_size;
+		}
+		ion_param->is_enable_gdc = 1;
+	}else{
+		ion_param->is_enable_gdc = 0;
+	}
+
+	//osd
+	osd_user_info_t *osd_info = &vp_vflow_contex->osd_info;
+	ion_param->osd_valid_count = osd_info->valid_osd_region_count;
+	for(int i = 0; i< ion_param->osd_valid_count; i++){
+		vp_ion_buffer_param_t *osd = &ion_param->osd[i];
+		osd->width = osd_info->position[i].width;
+		osd->height =osd_info->position[i].height;
+		osd->format = ION_OSD_BUFFER_VGA8;
+		osd->count = 1;
+	}
+
+	//vpu
+	vp_ion_vpu_param_t *vpu = &ion_param->vpu;
+	vpu->width = codec_user_config->width;
+	vpu->height = codec_user_config->height;
+	vpu->output_buffer_count = codec_user_config->output_buffer_count;
+	if(codec_user_config->input_buffer_is_extrenal){
+		vpu->input_buffer_count = 0;
+	}else{
+		vpu->input_buffer_count = codec_user_config->input_buffer_count;
+	}
+
+	if(codec_user_config->codec_type == MEDIA_CODEC_ID_H264){
+		vpu->type = ION_H264_ENCODEC;
+	}else if(codec_user_config->codec_type == MEDIA_CODEC_ID_H265){
+		vpu->type = ION_H265_ENCODEC;
+	}else{
+		SC_LOGE("not support codec type :%d", codec_user_config->codec_type);
+	}
+
+	//bpu
+	if(bpu_config->is_enable){
+		vp_ion_bpu_param_t *bpu = &ion_param->bpu;
+		bpu->input_height = bpu_config->input_height;
+		bpu->input_width = bpu_config->input_width;
+		bpu->input_queue_count = BPU_INPUT_BUFFER_NUM;
+
+		if(strcmp(bpu_config->model_name, "mobilenetv2") == 0){
+			bpu->output_queue_count = 1;
+		}else{
+			bpu->output_queue_count = BPU_OUTPUT_BUFFER_NUM;
+		}
+		bpu->output_dimensions = bpu_config->output_dimension;
+		for(int i = 0; i< bpu->output_dimensions; i++){
+			bpu->output_size[i] = bpu_config->output_size[i];
+		}
+
+		const bpu_model_info_t* bpu_model_info = bpu_wrap_model_info(bpu_config->model_name);
+		if(bpu_model_info == NULL){
+			SC_LOGE("model %s get info failed", bpu_config->model_name);
+			// return -1;
+		}
+		if(bpu_model_info->ouput_calculator_size_is_fixed){
+			bpu->ouput_calculator_size_dynamic = 0;
+		}else{
+			bpu->ouput_calculator_size_dynamic = bpu_model_info->ouput_calculator_size;
+		}
+	}
+
+	//for camera service
+	vp_ion_camera_service_param_t *camera_service = &ion_param->camera_service;
+	camera_service->width = vp_sensor_config->isp_ichn_attr->width;
+	camera_service->height = vp_sensor_config->isp_ichn_attr->height;
+
+	camera_service->format = ION_BUFFER_NV12;
+
+	if(vp_sensor_config->isp_attr->input_mode == 1){
+		camera_service->is_mcm_mode = 1; //vin->isp
+	}else{
+		camera_service->is_mcm_mode = 0; //vin->isp
+	}
+	camera_service->is_enable_3dnr = 1;
+	camera_service->is_enable_isp = 1;
+	camera_service->is_enable_vse = 1;
+	return 0;
+}
+
+int32_t vpp_init_ion_pipeline_fixed_param_from_vflow_contex(
+		vpp_camera_t *vpp, solution_cfg_cam_t* cam_cfg, vp_ion_pipeline_fixed_param_t *fixed_param){
+
+	memset(fixed_param, 0, sizeof(vp_ion_pipeline_fixed_param_t));
+	//for bpu
+	vp_ion_bpu_extern_param_t *bpu = &fixed_param->bpu;
+	bpu->is_used_bpu = false;
+
+	for(int i = 0; i< cam_cfg->max_pipeline_count; i++){
+		if(cam_cfg->cam_vpp[i].is_valid == 0){
+			continue;
+		}
+		if(cam_cfg->cam_vpp[i].is_enable == 0){
+			continue;
+		}
+		bpu_model_user_info_t *bpu_model_user_info = &vpp[i].bpu_model_user_info;
+		if(!bpu_model_user_info->is_enable){
+			continue;
+		}
+		if(!bpu->is_used_bpu){
+			bpu->is_used_bpu = true;
+		}
+		int is_already_calculated = 0;
+		//查看当前通道的模型，是否已经计算
+		for(int j = 0; j < bpu->item_count; j++){
+			int cmp_ret = strcmp(bpu->item_param[j].model_name, bpu_model_user_info->model_name);
+			if(cmp_ret == 0){
+				SC_LOGI("pipeline channel[%d] calculate bpu fixed size, found is alread calculated, so ignore it.\n");
+				is_already_calculated = 1;
+				break;
+			}
+		}
+		if(is_already_calculated){
+			continue;
+		}
+
+		const bpu_model_info_t *model_info = bpu_wrap_model_info(vpp[i].bpu_model_user_info.model_name);
+		if(model_info == NULL){
+			SC_LOGE("not found model info for: %s", vpp[i].bpu_model_user_info.model_name);
+			continue;
+		}
+		vp_ion_bpu_extern_single_param_t *item_param = &bpu->item_param[bpu->item_count];
+		strcpy(item_param->model_name, bpu_model_user_info->model_name);
+
+		item_param->heap_region_size = model_info->heap_region_size;
+		item_param->model_file_sizes = model_info->model_file_size;
+		if(model_info->ouput_calculator_size_is_fixed){
+			item_param->ouput_calculator_size_static = model_info->ouput_calculator_size;
+		}else{
+			item_param->ouput_calculator_size_static = 0;
+		}
+		// SC_LOGI("[%s] heap_region_size:%d model_file_sizes:%d ouput_calculator_size_static:%d", item_param->model_name,
+		// 	item_param->heap_region_size, item_param->model_file_sizes, item_param->ouput_calculator_size_static);
+		bpu->item_count++;
+	}
+
+	//for camera service
+	vp_ion_camera_service_extern_param_t *camera_service = &fixed_param->camera_service;
+	for(int i = 0; i< cam_cfg->max_pipeline_count; i++){
+		if(cam_cfg->cam_vpp[i].is_valid == 0){
+			continue;
+		}
+		if(cam_cfg->cam_vpp[i].is_enable == 0){
+			continue;
+		}
+
+		camera_service->is_used_isp = 1;
+		camera_service->is_used_vse = 1;
+	}
+	return 0;
+}
+
+int32_t vpp_camera_ion_param_get(solution_cfg_t* solution_cfg, solution_ion_param_info_t *solution_param_info){
+	int ret = 0;
+
+	//1. 预初始化，根据web参数，得到运行参数
+	vpp_camera_init_param_full(solution_cfg);
+
+	//2. 程序运行参数 ==> vp_ion 动态参数
+	solution_cfg_cam_t* cam_cfg = &solution_cfg->cam_solution;
+	vp_ion_pipeline_param_t *vp_ion_param = solution_param_info->pipeline_params;
+	solution_param_info->pipeline_param_vaild_count = 0;
+	for(int i = 0; i< cam_cfg->max_pipeline_count; i++){
+		if(cam_cfg->cam_vpp[i].is_valid == 0){
+			continue;
+		}
+		if(cam_cfg->cam_vpp[i].is_enable == 0){
+			continue;
+		}
+		ret = vpp_init_ion_pipeline_param_from_vflow_contex(
+				&g_vpp_camera[i].vp_vflow_contex,
+				&g_vpp_camera[i].m_encode_user_config,
+				&g_vpp_camera[i].bpu_model_user_info,
+				&vp_ion_param[solution_param_info->pipeline_param_vaild_count]);
+		if(ret != 0){
+			SC_LOGE("vpp_init_ion_pipeline_param_from_vflow_contex failed for channel %d.", i);
+			continue;
+		}
+		solution_param_info->pipeline_param_vaild_count++;
+	}
+
+	//3. 程序运行参数 ==> vp_ion 静态参数
+	vpp_init_ion_pipeline_fixed_param_from_vflow_contex(g_vpp_camera, cam_cfg, &solution_param_info->extern_param);
+	return 0;
 }
 
 int32_t vpp_camera_init(void)
@@ -567,7 +840,6 @@ int32_t vpp_camera_init(void)
 			bpu_wrap_general_result_handle, &g_vpp_camera[i].m_bpu_handle.m_vpp_id);
 	}
 
-	SC_LOGD("successful");
 	return 0;
 }
 

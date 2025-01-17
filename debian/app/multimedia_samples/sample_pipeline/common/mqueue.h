@@ -24,6 +24,7 @@ typedef enum
     E_QUEUE_ERROR_TIMEOUT,
     E_QUEUE_ERROR_NO_MEM,
     E_QUEUE_ERROR_FULL,
+	E_QUEUE_ERROR_REPEAT,
 } teQueueStatus;
 
 typedef struct
@@ -39,6 +40,7 @@ typedef struct
 } tsQueue;
 
 typedef int(*queue_process_func_t)(void *data, void *handle);
+typedef int(*queue_process_func_width_user_t)(void *data, void *handle, int user_flag);
 
 teQueueStatus mQueueCreate(tsQueue *psQueue, uint32_t u32Length);
 teQueueStatus mQueueDestroy(tsQueue *psQueue);
@@ -51,7 +53,8 @@ teQueueStatus mQueueDequeue(tsQueue *psQueue, void **ppvData);
 teQueueStatus mQueueDequeueTimed(tsQueue *psQueue, uint32_t u32WaitTimeMil, void **ppvData);
 teQueueStatus mQueueDequeueTimedWidthFunc(tsQueue *psQueue, uint32_t u32WaitTimeMil, void **ppvData,
 	queue_process_func_t process_func_cb, void *handle);
-
+teQueueStatus mQueueDequeueTimedWidthUserFunc(tsQueue *psQueue, uint32_t u32WaitTimeMil,
+	void **ppvData, queue_process_func_width_user_t process_func_cb, void *handle, int user_flag);
 int mQueueIsFull(tsQueue *psQueue);
 int mQueueIsEmpty(tsQueue *psQueue);
 

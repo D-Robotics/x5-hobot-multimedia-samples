@@ -105,6 +105,13 @@ static vin_node_attr_t sc035hgs_vin_node_attr = {
 	},
 };
 
+static vin_attr_ex_t sc035hgs_vin_attr_ex = {
+	.vin_attr_ex_mask = 0x80,
+	.mclk_ex_attr = {
+		.mclk_freq = 24000000,
+	},
+};
+
 static vin_ichn_attr_t sc035hgs_vin_ichn_attr = {
 	.width = SENSOR_WIDTH,
 	.height = SENSOR_HEIGHT,
@@ -155,6 +162,7 @@ vp_sensor_config_t sc035hgs_linear_640x480_raw10_30fps_2lane_vc1 = {
 	.camera_config = &sc035hgs_camera_config,
 	.vin_ichn_attr = &sc035hgs_vin_ichn_attr,
 	.vin_node_attr = &sc035hgs_vin_node_attr,
+	.vin_attr_ex   = &sc035hgs_vin_attr_ex,
 	.vin_ochn_attr = &sc035hgs_vin_ochn_attr,
 	.isp_attr      = &sc035hgs_isp_attr,
 	.isp_ichn_attr = &sc035hgs_isp_ichn_attr,

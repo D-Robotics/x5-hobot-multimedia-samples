@@ -13,20 +13,56 @@
 // limitations under the License.
 
 #include "gpu_2d_wraper.h"
-
-const n2d_color_t n2d_blue = N2D_COLOR_BGRA8(0x80, 0x00, 0x00, 0xff);
-const n2d_color_t n2d_black = N2D_COLOR_BGRA8(0x80, 0x00, 0x00, 0x00);
-const n2d_color_t n2d_black_opaque = N2D_COLOR_BGRA8(0x00, 0x00, 0x00, 0x00); //不透明
-const n2d_color_t n2d_green = N2D_COLOR_BGRA8(0x80, 0x00, 0xff, 0x00);
-const n2d_color_t n2d_red = N2D_COLOR_BGRA8(0x80, 0xff, 0x00, 0x00);
-const n2d_color_t n2d_white = N2D_COLOR_BGRA8(0x80, 0xff, 0xff, 0xff);
-const n2d_color_t n2d_grey = N2D_COLOR_BGRA8(0x80, 0x0f, 0x0f, 0x0f);
-const n2d_color_t n2d_light_grey = N2D_COLOR_BGRA8(0x80, 0x20, 0x20, 0x20);
+#define ALIGN_64(v) (((v) + 63) & ~63)
 
 int gpu_2d_crop_multi_rects(n2d_buffer_t* src, n2d_rectangle_t* rects, int count, n2d_buffer_t*crops){
+	const n2d_color_t n2d_grey = N2D_COLOR_BGRA8(0x80, 0x20, 0x20, 0x20);
+
 	n2d_error_t error = N2D_SUCCESS;
+
 	for (int i = 0; i < count; i++){
-		N2D_ON_ERROR(n2d_blit(&crops[i], N2D_NULL, src, &rects[i], N2D_BLEND_NONE));
+		if((rects[i].x < 0) || (rects[i].width <= 0) || (rects[i].height <= 0) || (rects[i].y < 0)){
+			N2D_ON_ERROR(n2d_fill(&crops[i], N2D_NULL, n2d_grey, N2D_BLEND_NONE));
+		}else{
+
+#if 1
+			int width_bround = rects[i].width + rects[i].x;
+			int height_bround = rects[i].height + rects[i].y;
+			if((width_bround >= src->width) || (height_bround >= src->height)){
+				printf("n2d crop rect error :%d*%d > %d*%d", width_bround, height_bround, src->width, src->height);
+				N2D_ON_ERROR(n2d_fill(&crops[i], N2D_NULL, n2d_grey, N2D_BLEND_NONE));
+			}else{
+				N2D_ON_ERROR(n2d_blit(&crops[i], N2D_NULL, src, &rects[i], N2D_BLEND_NONE));
+			}
+
+
+#else
+			n2d_rectangle_t dstrect;
+			dstrect.x = 0;
+			dstrect.y = 0;
+			dstrect.width  = crops[i].width;
+			dstrect.height = crops[i].height;
+
+			// dstrect.width = (dstrect.width > src->width)? src->width: dstrect.width;
+			// dstrect.height = (dstrect.height > src->height)? src->height: dstrect.height;
+
+			n2d_rectangle_t src_tmp;
+			src_tmp.x = ALIGN_64(rects[i].x);
+			src_tmp.y = ALIGN_64(rects[i].y);
+			src_tmp.width = ALIGN_64(rects[i].width);
+			src_tmp.height = ALIGN_64(rects[i].height);
+
+			src_tmp.width = ((src_tmp.width + src_tmp.x)> src->width)? (src->width - src_tmp.x): src_tmp.width;
+			src_tmp.height = ((src_tmp.height + src_tmp.y) > src->height)? (src->height - src_tmp.y): src_tmp.height;
+#if 0
+			printf("[%d] src [%d %d %d %d] --> dst [%d %d]\n",
+				i,
+				src_tmp.x, src_tmp.y,
+				src_tmp.width, src_tmp.height, dstrect.width, dstrect.height);
+#endif
+			N2D_ON_ERROR(n2d_filterblit(&crops[i], &dstrect, N2D_NULL, src, &src_tmp, N2D_BLEND_NONE));
+#endif
+		}
 	}
 	N2D_ON_ERROR(n2d_commit());
 #if 0

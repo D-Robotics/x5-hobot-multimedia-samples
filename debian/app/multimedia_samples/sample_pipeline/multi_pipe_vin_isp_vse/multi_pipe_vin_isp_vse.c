@@ -452,7 +452,6 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	uint32_t ichn_id = 0;
 	uint32_t ochn_id = 0;
 	uint64_t vin_attr_ex_mask = 0;
-	hbn_buf_alloc_attr_t alloc_attr = {0};
 
 	sensor_config = pipe_contex->sensor_config;
 	vin_node_attr = sensor_config->vin_node_attr;
@@ -468,8 +467,8 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
 			pipe_contex->csi_config.index);
 	}else{
-		vin_attr_ex.vin_attr_ex_mask = 0x80;	//bit7 for mclk
-		vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000; // 24MHz
+		vin_attr_ex.vin_attr_ex_mask = sensor_config->vin_attr_ex->vin_attr_ex_mask;
+		vin_attr_ex.mclk_ex_attr.mclk_freq = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
 		vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
 	}
 
@@ -494,17 +493,6 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 			ERR_CON_EQ(ret, 0);
 		}
 	}
-
-	alloc_attr.buffers_num = 3;
-	alloc_attr.is_contig = 1;
-	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
-						| HB_MEM_USAGE_CPU_WRITE_OFTEN
-						| HB_MEM_USAGE_CACHED;
-
-	ret = hbn_vnode_set_ochn_buf_attr(*vin_node_handle, ochn_id, &alloc_attr);
-
-	ERR_CON_EQ(ret, 0);
-
 	return 0;
 }
 
@@ -524,9 +512,6 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	isp_ichn_attr = sensor_config->isp_ichn_attr;
 	isp_ochn_attr = sensor_config->isp_ochn_attr;
 	isp_node_handle = &pipe_contex->isp_node_handle;
-
-	isp_attr->input_mode = 2;  // 1: online,  2: offline
-	sensor_config->vin_node_attr->cim_attr.cim_isp_flyby = 0; // 1: online,  0: offline
 
 	ret = hbn_vnode_open(HB_ISP, 0, AUTO_ALLOC_ID, isp_node_handle);
 	ERR_CON_EQ(ret, 0);
@@ -639,7 +624,7 @@ static int create_and_run_vflow(pipe_contex_t *pipe_contex,
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
 							pipe_contex->vin_node_handle,
-							0,
+							1,
 							pipe_contex->isp_node_handle,
 							0);
 	ERR_CON_EQ(ret, 0);
@@ -778,8 +763,6 @@ int main(int argc, char** argv) {
 		printf("\tVse Channel: %d\n", pipeline_info[i].vse_bind_codec_chn);
 		printf("\tEncode type: %s\n", pipeline_info[i].encode_type);
 		printf("\tOutput file: %s\n", pipeline_info[i].output_file);
-		printf("\tSIF cim_isp_flyby: %d\n", pipeline_info[i].pipe_contexts.sensor_config->vin_node_attr->cim_attr.cim_isp_flyby);
-		printf("\tISP input_mode: %d\n", pipeline_info[i].pipe_contexts.sensor_config->isp_attr->input_mode);
 	}
 
 	printf("MIPI host: 0x%x\n", used_mipi_host);

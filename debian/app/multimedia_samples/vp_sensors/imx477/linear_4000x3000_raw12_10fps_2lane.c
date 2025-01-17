@@ -72,6 +72,13 @@ static vin_node_attr_t imx477_vin_node_attr = {
 	},
 };
 
+static vin_attr_ex_t vin_attr_ex = {
+	.vin_attr_ex_mask = 0x80,
+	.mclk_ex_attr = {
+		.mclk_freq = 24000000,
+	},
+};
+
 static vin_ichn_attr_t imx477_vin_ichn_attr = {
 	.width = SENSOR_WIDTH,
 	.height = SENSOR_HEIGHT,
@@ -122,6 +129,7 @@ vp_sensor_config_t imx477_linear_4000x3000_raw12_10fps_2lane = {
 	.camera_config = &imx477_camera_config,
 	.vin_ichn_attr = &imx477_vin_ichn_attr,
 	.vin_node_attr = &imx477_vin_node_attr,
+	.vin_attr_ex   = &vin_attr_ex,
 	.vin_ochn_attr = &imx477_vin_ochn_attr,
 	.isp_attr      = &imx477_isp_attr,
 	.isp_ichn_attr = &imx477_isp_ichn_attr,

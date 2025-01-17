@@ -726,6 +726,13 @@ typedef struct {
 	char chip_type[16];
 } T_SDK_CHIP_TYPE;
 
+typedef struct
+{
+	char *param;
+	int ion_lack;
+	float vpu_lack;
+}T_SDK_CHECK_INFO;
+
 #if defined (__cplusplus)
 }
 #endif

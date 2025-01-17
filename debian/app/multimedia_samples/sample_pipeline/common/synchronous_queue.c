@@ -18,6 +18,39 @@
 #include <unistd.h>
 #include "util.h"
 #include "synchronous_queue.h"
+
+//#define QUEUE_DEBUG
+#ifdef QUEUE_DEBUG
+#define QUEUE_LOG printf
+#else
+#define QUEUE_LOG(...)
+#endif
+
+
+int sync_queue_add_user(sync_queue_t *sync_queue){
+
+	sync_queue->user_count++;
+
+	QUEUE_LOG("[Queue add user]: [%s -> %s] count[%d]\n", sync_queue->sync_queue_info.productor_name,
+					sync_queue->sync_queue_info.consumer_name , sync_queue->user_count);
+
+	if(sync_queue->user_count > SYNC_QUEUE_MAX_USER){
+		return -1;
+	}
+	return (sync_queue->user_count - 1);
+}
+
+int sync_queue_create_multi_user(sync_queue_t *sync_queue, sync_queue_info_t *sync_queue_info)
+{
+	int ret = sync_queue_create(sync_queue, sync_queue_info);
+
+	if(ret == 0){
+//		return (sync_queue->user_count - 1);
+		sync_queue->user_count = 0;
+	}
+	return ret;
+}
+
 int sync_queue_create(sync_queue_t *sync_queue, sync_queue_info_t *sync_queue_info){
 
 	int ret = 0;
@@ -61,6 +94,10 @@ int sync_queue_create(sync_queue_t *sync_queue, sync_queue_info_t *sync_queue_in
 		item_data->item_count = sync_queue_info->data_item_count;
 		item_data->items = items;
 		item_data->index = j;
+		item_data->inused_frame_index = 0;
+		item_data->unused_frame_index = 0;
+		item_data->inused_update_time_ms = 0;
+		item_data->unused_update_time_ms = 0;
 
 		teQueueStatus status = mQueueEnqueue(&sync_queue->ununsed_queue, (void *)item_data);
 		if (status != E_QUEUE_OK){
@@ -70,10 +107,11 @@ int sync_queue_create(sync_queue_t *sync_queue, sync_queue_info_t *sync_queue_in
 	}
 	sync_queue->sync_queue_info = *sync_queue_info;
 	sync_queue->user_count = 1;
-	return 0;
-}
-int sync_queue_add_user(sync_queue_t *sync_queue){
-	sync_queue->user_count++;
+	sync_queue->inused_queue_count = 0;
+
+	QUEUE_LOG("[Queue create]: [%s -> %s] count[%d]\n", sync_queue->sync_queue_info.productor_name,
+				sync_queue->sync_queue_info.consumer_name , sync_queue->user_count);
+
 	return 0;
 }
 
@@ -81,6 +119,10 @@ int sync_queue_add_user(sync_queue_t *sync_queue){
 int sync_queue_get_unused_object(sync_queue_t* sync_queue, uint32_t timeout_ms, data_item_t **data_item){
 	const int timeout_duration_ms = 1000;
 	int run_count = 0;
+
+	QUEUE_LOG("[Queue get unuse]: [%s -> %s]\n", sync_queue->sync_queue_info.productor_name,
+				sync_queue->sync_queue_info.consumer_name );
+
 	while(timeout_duration_ms * run_count < timeout_ms){
 		run_count++;
 
@@ -98,19 +140,35 @@ int sync_queue_get_unused_object(sync_queue_t* sync_queue, uint32_t timeout_ms, 
 	return 0;
 }
 
+int inused_queueu_enqueue_process_func(void *data, void *handle){
+	sync_queue_t *sync_queue = (sync_queue_t*)handle;
+	data_item_t* data_item = (data_item_t*)data;
+	data_item->inused_frame_index++;
+	data_item->inused_update_time_ms = get_timestamp_ms();
+	sync_queue->inused_queue_count++;
+
+	for (size_t i = 0; i < sync_queue->user_count; i++){
+		data_item->user_recoder[i] = 1;
+	}
+	return 1;
+}
+
 int sync_queue_save_inused_object(sync_queue_t* sync_queue, uint32_t timeout_ms, data_item_t *data_item){
 	int ret = -1;
 	teQueueStatus status = E_QUEUE_OK;
 	const uint32_t check_duration_ms = 500;
+
+QUEUE_LOG("[Queue save inused]: [%s -> %s]\n", sync_queue->sync_queue_info.productor_name,
+				sync_queue->sync_queue_info.consumer_name );
+
 
 	uint32_t timeout_ms_consume = 0;
 	data_item->is_init_added = 0;
 	data_item->ref_repay = sync_queue->user_count;
 	data_item->ref_obtain = sync_queue->user_count;
 	while(timeout_ms_consume < timeout_ms){
-		data_item->update_time_ms = get_timestamp_ms();
-
-		status = mQueueEnqueueEx(&sync_queue->inused_queue, data_item);
+		// status = mQueueEnqueueEx(&sync_queue->inused_queue, data_item);
+		status = mQueueEnqueueExWidhFunc(&sync_queue->inused_queue, data_item, inused_queueu_enqueue_process_func, sync_queue);
 		if (status != E_QUEUE_OK){
 			printf("[%s -> %s] sync_queue_save_inused_object failed:%d, already wait %dms\n",
 			sync_queue->sync_queue_info.productor_name,
@@ -136,12 +194,13 @@ int dequeue_process_func(void *data, void *handle){
 		exit(-1);
 	}
 
+	data_item->ref_obtain--;
 	if(sync_queue->user_count == 2){
-		// printf("de: %d\n", data_item->ref);
+		// printf("de: %d\n", data_item->ref_obtain);
 	}
 
-	data_item->ref_obtain--;
 	if(data_item->ref_obtain == 0){
+		sync_queue->inused_queue_count--;
 		return 1;
 	}
 	return 0;
@@ -156,6 +215,9 @@ int enqueue_process_func(void *data, void *handle){
 	}
 	data_item->ref_repay--;
 	if(data_item->ref_repay == 0){
+
+		data_item->unused_update_time_ms = get_timestamp_ms();
+		data_item->unused_frame_index++;
 		return 1;
 	}
 
@@ -177,14 +239,80 @@ int enqueue_process_func(void *data, void *handle){
 	return 0;
 }
 
+int dequeue_process_func_with_user(void *data, void *handle, int user_flag){
+
+	sync_queue_t *sync_queue = (sync_queue_t*)handle;
+	data_item_t* data_item = (data_item_t*)data;
+	if(data_item->ref_obtain <= 0){
+		printf("dequeue_process_func error,  found data ref count is %d, so exit process.\n",
+			data_item->ref_obtain);
+		exit(-1);
+	}
+	//0: 已经被读取
+	if(data_item->user_recoder[user_flag] == 0){
+		return -1;
+	}else{
+		data_item->user_recoder[user_flag] = 0;
+	}
+
+	data_item->ref_obtain--;
+	if(sync_queue->user_count == 2){
+		// printf("de: %d\n", data_item->ref_obtain);
+	}
+
+	if(data_item->ref_obtain == 0){
+		sync_queue->inused_queue_count--;
+		return 1;
+	}
+	return 0;
+}
+
+int sync_queue_obtain_inused_object_width_user(sync_queue_t* sync_queue, uint32_t timeout_ms, data_item_t **data_item, int user_flag){
+	int ret = -1;
+	const int timeout_duration_ms = 1000;
+	int run_count = 0;
+
+	QUEUE_LOG("[Queue obtain inused]: [%s -> %s] user[%d]\n", sync_queue->sync_queue_info.productor_name,
+				sync_queue->sync_queue_info.consumer_name, user_flag);
+
+	while(timeout_duration_ms * run_count < timeout_ms){
+		run_count++;
+
+		teQueueStatus status = E_QUEUE_OK;
+		status = mQueueDequeueTimedWidthUserFunc(&sync_queue->inused_queue, timeout_duration_ms, (void **)data_item,
+			dequeue_process_func_with_user, sync_queue, user_flag);
+		if(status != E_QUEUE_OK){
+
+			if(status == E_QUEUE_ERROR_REPEAT){ //读取到重复的数据
+				ret = 1;
+				break;
+			}
+			printf("[%s -> %s] sync_queue_obtain_inused_object failed:%d, wait time %d\n",
+				sync_queue->sync_queue_info.productor_name,
+				sync_queue->sync_queue_info.consumer_name ,
+				status, timeout_duration_ms * run_count);
+			continue;
+		}
+
+		ret = 0;
+		break;
+	}
+
+	return ret;
+}
+
 //for consumer
 int sync_queue_obtain_inused_object(sync_queue_t* sync_queue, uint32_t timeout_ms, data_item_t **data_item){
 	int ret = -1;
 	const int timeout_duration_ms = 1000;
 	int run_count = 0;
+
+	QUEUE_LOG("[Queue obtain inused]: [%s -> %s]\n", sync_queue->sync_queue_info.productor_name,
+				sync_queue->sync_queue_info.consumer_name);
+
+
 	while(timeout_duration_ms * run_count < timeout_ms){
 		run_count++;
-
 		teQueueStatus status = E_QUEUE_OK;
 		status = mQueueDequeueTimedWidthFunc(&sync_queue->inused_queue, timeout_duration_ms, (void **)data_item,
 			dequeue_process_func, sync_queue);
@@ -207,10 +335,12 @@ int sync_queue_repay_unused_object(sync_queue_t* sync_queue, uint32_t timeout_ms
 	teQueueStatus status = E_QUEUE_OK;
 	const uint32_t check_duration_ms = 500;
 
+	QUEUE_LOG("[Queue repay unused]: [%s -> %s]\n", sync_queue->sync_queue_info.productor_name,
+				sync_queue->sync_queue_info.consumer_name);
+
 	uint32_t timeout_ms_consume = 0;
 	data_item->is_init_added = 0;
 	while(timeout_ms_consume < timeout_ms){
-		data_item->update_time_ms = get_timestamp_ms();
 		status = mQueueEnqueueExWidhFunc(&sync_queue->ununsed_queue, data_item, enqueue_process_func, sync_queue);
 		if (status != E_QUEUE_OK){
 			printf("[%s -> %s] sync_queue_repay_unused_object failed:%d, already wait %dms\n",
@@ -222,6 +352,7 @@ int sync_queue_repay_unused_object(sync_queue_t* sync_queue, uint32_t timeout_ms
 			timeout_ms_consume += check_duration_ms;
 			continue;
 		}
+
 		ret = 0;
 		break;
 	}

@@ -87,9 +87,22 @@ void vp_free_image_frame(ImageFrame *image_frame)
 // 获取主芯片类型
 static int32_t vp_get_chip_type(char *chip_type)
 {
-	// TODO: 先写死，后面有判断方法后再补充正确的逻辑
-	strcpy(chip_type, "X5");
+	FILE *file = fopen("/sys/class/socinfo/soc_name", "r");
+	if (file == NULL) {
+		SC_LOGE("Failed to open /sys/class/socinfo/soc_name");
+		return -1;
+	}
 
+	if (fgets(chip_type, 16, file) == NULL) {
+		SC_LOGE("Failed to read from /sys/class/socinfo/soc_name");
+		fclose(file);
+		return -1;
+	}
+
+	// Remove newline character at the end of the string if it exists
+	chip_type[strcspn(chip_type, "\n")] = '\0';
+
+	fclose(file);
 	return 0;
 }
 

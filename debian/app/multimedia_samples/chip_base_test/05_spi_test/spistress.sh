@@ -1,54 +1,72 @@
 #!/bin/sh
 
-if [ -f "../config/ini_parser_functions.sh" ] && [ -f "../config/config.ini" ]; then
-	source ../config/ini_parser_functions.sh
-	# 定义INI文件路径
-	ini_file="../config/config.ini"
+# Determine the directory where the script is located
+script_dir=$(cd "$(dirname "$0")" && pwd)
 
-	# 定义要解析的section和键值
-	target_section="SPI"
-	target_key_device="Device"
-	target_key_count="StressCount"
+# Default values
+Device="/dev/spidev2.0"         # Default SPI device
+StressCount="100"               # Default stress test count
+spi_speed="12000000"            # Default SPI speed
+output_dir=$(realpath "$script_dir/../log")  # Default log directory
 
-	# 执行解析并将输出保存到变量
-	parsed_device=$(parse_ini_section "$target_section" "$target_key_device" "$ini_file")
-	parsed_count=$(parse_ini_section "$target_section" "$target_key_count" "$ini_file")
+# Function to display help information
+show_help() {
+    echo "Usage: $0 [options]"
+    echo
+    echo "Options:"
+    echo "  -d <device>      Set the SPI device to test (default: /dev/spidev0.0)."
+    echo "  -c <count>       Set the stress test count (default: 100)."
+    echo "  -s <speed>       Set the SPI speed in Hz (default: 12000000)."
+    echo "  -o <directory>   Set the output directory for logs (default: '../log')."
+    echo "  -h               Show this help message and exit."
+    echo
+}
 
-	# 从解析结果中提取数值部分并保存到变量
-	Device=$(echo "$parsed_device" | awk '{print $NF}')
-	StressCount=$(echo "$parsed_count" | awk '{print $NF}')
-
-	# 打印配置
-	echo "Configure Device: $Device"
-	echo "Configure StressCount: $StressCount"
-fi
-
-#如果从INI读取到的数值为空则使用缺省参数
-if [ -z "$Device" ]; then
-	Device="/dev/spidev0.0"
-	echo "Use default Device $Device"
-fi
-
-if [ -z "$StressCount" ]; then
-	StressCount="100"
-	echo "Use default count $StressCount"
-fi
-
-echo "SPI test starting..."
-mkdir -p ../log
-num=1
-
-while true; do
-	spiloopfile="../log/spiloop$num.txt"
-
-	# 检查日志文件是否已存在
-	if [ -e "$spiloopfile" ]; then
-		((num++))
-	else
-		#./spidev_tc -D /dev/spidev0.0 -s 12000000 -I 10 -e 3 -S 32
-		./spidev_tc -D $Device -s 12000000 -I $StressCount -e 3 -S 32 > ../log/spiloop$num.txt
-		break
-	fi
+# Parse command-line arguments
+while getopts "d:c:s:o:h" opt; do
+    case "$opt" in
+        d) Device="$OPTARG" ;;
+        c) StressCount="$OPTARG" ;;
+        s) spi_speed="$OPTARG" ;;
+        o) output_dir=$(realpath "$OPTARG") ;;
+        h) show_help; exit 0 ;;
+        *)
+            echo "Unknown option: -$OPTARG"
+            show_help
+            exit 1
+            ;;
+    esac
 done
 
-echo "SPI test completed!"
+# Ensure the output directory exists
+mkdir -p "$output_dir"
+
+echo "SPI test starting..."
+echo "Test configuration:"
+echo "  Device: $Device"
+echo "  Stress Count: $StressCount"
+echo "  SPI Speed: $spi_speed Hz"
+echo "  Output Directory: $output_dir"
+
+# Generate a unique log file
+num=1
+while true; do
+    spi_test_log_file="$output_dir/spi_test_log$num.txt"
+    if [ -e "$spi_test_log_file" ]; then
+        num=$((num + 1))
+    else
+        break
+    fi
+done
+
+echo "  Log file: $spi_test_log_file"
+# Run the SPI test
+"${script_dir}/spidev_tc" -D "$Device" -s "$spi_speed" -I "$StressCount" -e 3 -S 32 > "$spi_test_log_file" 2>&1
+exit_code=$?
+
+if [ "$exit_code" -ne 0 ]; then
+    echo "SPI test failed! Check log: $spi_test_log_file"
+    exit 1
+else
+    echo "SPI test completed successfully! Log saved to: $spi_test_log_file"
+fi

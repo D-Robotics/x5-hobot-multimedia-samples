@@ -40,6 +40,7 @@ static struct option const long_options[] = {
 
 static int create_and_run_vflow(pipe_contex_t *pipe_contex);
 static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count);
+static int lpwm_enable_chn(hbn_vnode_handle_t vin_node_handle, uint8_t enable, uint8_t chn);
 
 static void print_help() {
 	printf("Usage: get_vin_data [OPTIONS]\n");
@@ -56,6 +57,8 @@ static void command_help() {
 	printf("***************  Command Lists  ***************\n");
 	printf(" g	-- get single frame \n");
 	printf(" l	-- get a set frames \n");
+	printf(" x      -- only enable lpwm \n");
+	printf(" y      -- only disable lpwm \n");
 	printf(" q	-- quit  \n");
 	printf(" h	-- print help message\n");
 }
@@ -195,8 +198,8 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
 			pipe_contex->csi_config.index);
 	}else{
-		vin_attr_ex.vin_attr_ex_mask = 0x80;	//bit7 for mclk
-		vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000; // 24MHz
+		vin_attr_ex.vin_attr_ex_mask = sensor_config->vin_attr_ex->vin_attr_ex_mask;
+		vin_attr_ex.mclk_ex_attr.mclk_freq = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
 		vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
 	}
 	ret = hbn_vnode_open(HB_VIN, hw_id, AUTO_ALLOC_ID, vin_node_handle);
@@ -290,6 +293,49 @@ void vin_dump_func(hbn_vnode_handle_t vin_node_handle) {
 	hbn_vnode_releaseframe(vin_node_handle, ochn_id, &out_img);
 }
 
+/*
+enum lpwm_dynamic_enable {
+        LPWM_CHANGE_ATTR,
+        LPWM_ONLY_ENABLE,
+        LPWM_ONLY_DISABLE,
+        LPWM_DYNAMIC_MAX,
+};
+ */
+
+
+
+static int lpwm_enable_chn(hbn_vnode_handle_t vin_node_handle, uint8_t enable, uint8_t chn)
+{
+	vin_attr_ex_t vin_attr_ex = {0};
+	uint64_t vin_attr_ex_mask = 0;
+	uint32_t ret = 0;
+
+	printf("%s enable = %d, chn = %d \n", __func__, enable, chn);
+
+	vin_attr_ex.vin_attr_ex_mask = 0x10; //bit4 for lpwm
+	vin_attr_ex.dynamic_fps_attr.lpwm_chn = chn;
+
+	if (enable == 0)
+		vin_attr_ex.dynamic_fps_attr.enable = LPWM_ONLY_DISABLE;
+	else if (enable == 1)
+		vin_attr_ex.dynamic_fps_attr.enable = LPWM_ONLY_ENABLE;
+
+	vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
+	if (vin_attr_ex_mask) {
+		for (uint8_t i = 0; i < VIN_ATTR_EX_INVALID; i ++) {
+			if ((vin_attr_ex_mask & (1 << i)) == 0)
+				continue;
+
+			vin_attr_ex.ex_attr_type = i;
+			/*we need to set hbn_vnode_set_attr_ex in a loop*/
+			ret = hbn_vnode_set_attr_ex(vin_node_handle, &vin_attr_ex);
+			ERR_CON_EQ(ret, 0);
+		}
+	}
+
+	return ret;
+}
+
 static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count)
 {
 	int i, j;
@@ -318,6 +364,18 @@ static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count)
 						vin_node_handle = pipe_contex[i].vin_node_handle;
 						vin_dump_func(vin_node_handle);
 					}
+				}
+				break;
+			case 'x':
+				for (i = 0; i < sensor_count; i ++) {
+					vin_node_handle = pipe_contex[i].vin_node_handle;
+					(void)lpwm_enable_chn(vin_node_handle, 1, 0);
+				}
+				break;
+			case 'y':
+				for (i = 0; i < sensor_count; i ++) {
+					vin_node_handle = pipe_contex[i].vin_node_handle;
+					(void)lpwm_enable_chn(vin_node_handle, 0, 0);
 				}
 				break;
 			case 'h':

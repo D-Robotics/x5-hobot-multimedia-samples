@@ -166,6 +166,7 @@ static void *post_process_yolov5s(void *ptr)
 	tsThread *privThread = (tsThread*)ptr;
 	Yolov5PostProcessInfo_t *post_info;
 
+	detect_object_array_t detect_object_array;
 	// int count = 0;
 	mThreadSetName(privThread, __func__);
 
@@ -178,6 +179,8 @@ static void *post_process_yolov5s(void *ptr)
 			continue;
 		}
 		if(bpu_handle->post_processs_enable){
+#if 0
+			// int valid_count =
 			char *results = Yolov5PostProcess(post_info);
 			if (results) {
 				if (NULL != bpu_handle->callback) {
@@ -185,6 +188,12 @@ static void *post_process_yolov5s(void *ptr)
 				}
 				free(results);
 			}
+#else
+		Yolov5PostProcessWidthVector(post_info, &detect_object_array);
+		if (NULL != bpu_handle->callback) {
+			bpu_handle->callback(&detect_object_array, bpu_handle->m_userdata);
+		}
+#endif
 		}
 		if (post_info) {
 			free(post_info);
@@ -235,14 +244,14 @@ static void *inference_yolov5s(void *ptr)
 	sprintf(time_sts_tag, "yolov5 infer process:%d", bpu_handle->m_vpp_id);
 
 	struct PerformanceTestParamSimple performace_total_test_param_simple = {
-		.iteration_number = 30 * 60,
+		.iteration_number = 30 * 60 / 5,
 		.test_case = "yolov5_inference_thread_total",
 		.run_count = 0,
 		.test_count = 0,
 	};
 
 	struct PerformanceTestParam performace_test_param_for_infer = {
-		.iteration_number = 30 * 60,
+		.iteration_number = 30 * 60 / 5,
 		.test_case = "yolov5_inference_thread",
 		.run_count = 0,
 		.consumu_time_sum_us = 0,
@@ -312,8 +321,8 @@ static void *inference_yolov5s(void *ptr)
 			continue;
 		}
 		post_info->is_pad_resize = 0;
-		post_info->score_threshold = 0.1;
-		post_info->nms_threshold = 0.45;
+		post_info->score_threshold = 0.2;
+		post_info->nms_threshold = 0.65;
 		post_info->nms_top_k = 500;
 		post_info->width = bpu_handle->m_image_info.m_model_w;
 		post_info->height = bpu_handle->m_image_info.m_model_h;
@@ -398,8 +407,9 @@ int32_t bpu_wrap_init(bpu_handle_t *bpu_handle, char *model_file_name, char *mod
 
 	// 设置默认的原始图像宽高为 1920 * 1080
 	// 如果原始图像时4K/2K或者其他分辨率，请调用bpu_wrap_set_ori_hw接口重新设置
-	bpu_handle->m_image_info.m_ori_height = 3840;
-	bpu_handle->m_image_info.m_ori_width = 2160;
+
+	bpu_handle->m_image_info.m_ori_width = 3840;
+	bpu_handle->m_image_info.m_ori_height = 2160;
 
 	// 队列中存2个，解决算法结果延迟较大的问题
 	mQueueCreate(&bpu_handle->m_input_queue, 2);//the length of queue is 2

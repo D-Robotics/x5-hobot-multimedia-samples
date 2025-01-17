@@ -110,6 +110,8 @@ static struct uvc_frame_info uvc_frames_mjpeg[] = {
 };
 
 static struct uvc_frame_info uvc_frames_h264[] = {
+	{ 640,  480, { 333333, 0 }, 3072 }, /* Note: 480p */
+	{ 1088, 1280, { 333333, 0 }, 3072 }, /* Note: 1280p */
 	{ 1280, 720, { 333333, 0 }, 3072 }, /* Note: 720p */
 	{ 1920, 1080, { 333333, 0 }, 3072 }, /* Note: 1080p */
 	{ 0, 0, { 0, }, },

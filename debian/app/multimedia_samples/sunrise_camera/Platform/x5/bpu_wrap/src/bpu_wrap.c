@@ -153,8 +153,8 @@ static int32_t prepare_output_tensor(hbDNNTensor *output_tensor,
 			"hbDNNGetOutputTensorProperties failed");
 	HB_CHECK_SUCCESS(hbSysAllocCachedMem(&output[i].sysMem[0], output[i].properties.alignedByteSize),
 			"hbSysAllocCachedMem failed");
-	SC_LOGI("model output tensor [%d] output_count: %d, size: %d\n", i,
-		output_count, output[i].properties.alignedByteSize);
+	// SC_LOGI("model output tensor [%d] output_count: %d, size: %d\n", i,
+	// 	output_count, output[i].properties.alignedByteSize);
 
 	}
 
@@ -243,9 +243,9 @@ static void *inference_yolov5s(void *ptr)
 	hbDNNGetOutputCount(&output_count, dnn_handle);
 
 	// 准备模型输出节点tensor，5组输出buff轮转，简单处理，理论上后处理的速度是要比算法推理更快的
-	hbDNNTensor output_tensors[5][3];
+	hbDNNTensor output_tensors[BPU_OUTPUT_BUFFER_NUM][3];
 	int32_t cur_ouput_buf_idx = 0;
-	for (i = 0; i < 5; i++) {
+	for (i = 0; i < BPU_OUTPUT_BUFFER_NUM; i++) {
 		ret = prepare_output_tensor(output_tensors[i], dnn_handle);
 		if (ret) {
 			SC_LOGE("prepare model output tensor failed");
@@ -309,7 +309,7 @@ static void *inference_yolov5s(void *ptr)
 			// SC_LOGI("post process queue full, skip it, queue length is %d",
 			// 	bpu_handle->m_output_queue.u32Length);
 			cur_ouput_buf_idx++;
-			cur_ouput_buf_idx %= 5;
+			cur_ouput_buf_idx %= BPU_OUTPUT_BUFFER_NUM;
 			continue;
 		}
 
@@ -332,12 +332,12 @@ static void *inference_yolov5s(void *ptr)
 		post_info->output_tensor = output_tensors[cur_ouput_buf_idx];
 		mQueueEnqueue(&bpu_handle->m_output_queue, post_info);
 		cur_ouput_buf_idx++;
-		cur_ouput_buf_idx %= 5;
+		cur_ouput_buf_idx %= BPU_OUTPUT_BUFFER_NUM;
 
 
 	}
 
-	for (i = 0; i < 5; i++)
+	for (i = 0; i < BPU_OUTPUT_BUFFER_NUM; i++)
 		release_output_tensor(output_tensors[i], 3);	// 释放模型输出资源
 exit:
 	mThreadFinish(privThread);
@@ -398,9 +398,9 @@ static void *inference_fcos(void *ptr)
 
 	SC_LOGI("packed_dnn_handle: %p, dnn_handle: %p output count:%d.", packed_dnn_handle, dnn_handle, output_count);
 	// 准备模型输出节点tensor，5组输出buff轮转，简单处理，理论上后处理的速度是要比算法推理更快的
-	hbDNNTensor output_tensors[5][15];
+	hbDNNTensor output_tensors[BPU_OUTPUT_BUFFER_NUM][15];
 	int32_t cur_ouput_buf_idx = 0;
-	for (i = 0; i < 5; i++) {
+	for (i = 0; i < BPU_OUTPUT_BUFFER_NUM; i++) {
 		ret = prepare_output_tensor(output_tensors[i], dnn_handle);
 		if (ret) {
 			SC_LOGE("prepare model output tensor failed");
@@ -455,7 +455,7 @@ static void *inference_fcos(void *ptr)
 		if (mQueueIsFull(&bpu_handle->m_output_queue)) {
 			SC_LOGI("post process queue full, skip it");
 			cur_ouput_buf_idx++;
-			cur_ouput_buf_idx %= 5;
+			cur_ouput_buf_idx %= BPU_OUTPUT_BUFFER_NUM;
 			continue;
 		}
 
@@ -478,10 +478,10 @@ static void *inference_fcos(void *ptr)
 		post_info->output_tensor = output_tensors[cur_ouput_buf_idx];
 		mQueueEnqueue(&bpu_handle->m_output_queue, post_info);
 		cur_ouput_buf_idx++;
-		cur_ouput_buf_idx %= 5;
+		cur_ouput_buf_idx %= BPU_OUTPUT_BUFFER_NUM;
 	}
 
-	for (i = 0; i < 5; i++)
+	for (i = 0; i < BPU_OUTPUT_BUFFER_NUM; i++)
 		release_output_tensor(output_tensors[i], output_count);	// 释放模型输出资源
 exit:
 	mThreadFinish(privThread);
@@ -528,11 +528,14 @@ static void *inference_mobilenetv2(void *ptr)
 
 	// 准备模型输出节点tensor
 	hbDNNTensor output_tensors[1];
-	ret = prepare_output_tensor(output_tensors, dnn_handle);
-	if (ret) {
-		printf("prepare model output tensor failed\n");
-		goto exit;
+	for (int i = 0; i < 1; i++) {
+		ret = prepare_output_tensor(&output_tensors[i], dnn_handle);
+		if (ret) {
+			SC_LOGE("prepare model output tensor failed");
+			goto exit;
+		}
 	}
+
 
 	hbDNNTaskHandle_t task_handle = NULL;
 	hbDNNTensor *output = &output_tensors[0];
@@ -1000,4 +1003,86 @@ int32_t bpu_wrap_general_result_handle(char *result, void *userdata)
 	ret = SDK_Cmd_Impl(SDK_CMD_WEBSOCKET_SEND_MSG, (void*)ws_msg);
 	free(ws_msg);
 	return ret;
+}
+
+int32_t bpu_wrap_get_model_user_info(char *model_name,
+	bpu_model_user_info_t *dimensions_info){
+
+	hbDNNTensorProperties properties = {0};
+	bpu_model_descriptor *des = NULL;
+	for (int i = 0; i < sizeof(bpu_models) / sizeof(bpu_models[0]); ++i) {
+		if (strcmp(model_name, bpu_models[i].model_name) == 0) {
+			des = &bpu_models[i];
+			break;
+		}
+	}
+	if(des == NULL){
+		SC_LOGE("Unsupported model name: %s", model_name);
+		return -1;
+	}
+
+	//拷贝模型的名字
+	int model_file_array_len = sizeof(dimensions_info->model_name);
+	strncpy(dimensions_info->model_name, model_name,
+		model_file_array_len - 1);
+	dimensions_info->model_name[model_file_array_len - 1] = '\0';
+
+	const char **model_name_list;
+	int32_t model_count = 0;
+	hbPackedDNNHandle_t packed_dnn_handle;
+	hbDNNHandle_t dnn_handle;
+
+	char *model_file_path = des->model_path;
+	printf("hbDNNInitializeFromFiles: [%s] [%s]\n", dimensions_info->model_name, model_file_path);
+	HB_CHECK_SUCCESS(
+		hbDNNInitializeFromFiles(&packed_dnn_handle, (char const **)&model_file_path, 1),
+		"hbDNNInitializeFromFiles failed"); // 从本地文件加载模型
+
+	HB_CHECK_SUCCESS(hbDNNGetModelNameList(
+		&model_name_list, &model_count, packed_dnn_handle),
+		"hbDNNGetModelNameList failed");
+
+	if (model_count <= 0) {
+		printf("Modle count <= 0\n");
+		return -1;
+	}
+
+	HB_CHECK_SUCCESS(
+		hbDNNGetModelHandle(&dnn_handle, packed_dnn_handle, model_name_list[0]),
+		"hbDNNGetModelHandle failed");
+
+	HB_CHECK_SUCCESS(
+			hbDNNGetInputTensorProperties(&properties, dnn_handle, 0),
+			"hbDNNGetInputTensorProperties failed");
+
+	// 输入信息
+	int ret = 0;
+	hbDNNTensorShape  *input_tensor_shape = &properties.validShape;	 // 获取模型输入shape
+	dimensions_info->input_width = (input_tensor_shape->dimensionSize)[2];
+	dimensions_info->input_height = (input_tensor_shape->dimensionSize)[3];
+	SC_LOGI("get model input_tensor_shape shape, NCHW = (1, 3, %d, %d)",
+		dimensions_info->input_width, dimensions_info->input_height);
+
+	// 输出信息
+	int32_t output_count = 0;
+	hbDNNGetOutputCount(&output_count, dnn_handle);
+	for (int i = 0; i < output_count; ++i) {
+		if(i >= BPU_MAX_DIMENSION){
+			SC_LOGW("model output dimension is too big %d > %d", output_count, BPU_MAX_DIMENSION);
+			break;
+		}
+
+		hbDNNTensor output;
+		ret = hbDNNGetOutputTensorProperties(&output.properties, dnn_handle, i);
+		if(ret != 0){
+			SC_LOGE("model %s get output property failed.", model_name);
+			break;
+		}
+		dimensions_info->output_size[i] = output.properties.alignedByteSize;
+		dimensions_info->output_dimension++;
+	}
+
+	HB_CHECK_SUCCESS(hbDNNRelease(packed_dnn_handle), "hbDNNRelease failed");
+
+	return 0;
 }

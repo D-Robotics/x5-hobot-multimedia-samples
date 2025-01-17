@@ -688,7 +688,7 @@ int main(int argc, char** argv) {
 
 		ret = __add_property(display_context.drm_fd, req, display_context.plane_id, DRM_MODE_OBJECT_PLANE, "CRTC_ID", display_context.crtc_id);
 		ret |= __add_property(display_context.drm_fd, req, display_context.plane_id, DRM_MODE_OBJECT_PLANE, "FB_ID", fb_info.frame_buffer_id);
-
+		ret |= __add_property(display_context.drm_fd, req, display_context.plane_id, DRM_MODE_OBJECT_PLANE, "rotation", DRM_MODE_ROTATE_0);
 		ret |= __add_property(display_context.drm_fd, req, display_context.plane_id, DRM_MODE_OBJECT_PLANE, "SRC_X", 0);
 		ret |= __add_property(display_context.drm_fd, req, display_context.plane_id, DRM_MODE_OBJECT_PLANE, "SRC_Y", 0);
 		ret |= __add_property(display_context.drm_fd, req, display_context.plane_id, DRM_MODE_OBJECT_PLANE, "SRC_W", display_context.width << 16);

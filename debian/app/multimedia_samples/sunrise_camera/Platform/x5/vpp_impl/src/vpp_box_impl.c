@@ -56,6 +56,7 @@ typedef struct
 	media_codec_context_t m_decode_context;
 	vp_decode_param_t m_decode_param;
 
+	media_codec_user_config_t m_encode_user_config;
 	media_codec_context_t m_encode_context;
 
 	// 使能vse, 功能：
@@ -181,7 +182,7 @@ static void *get_decode_output_thread(void *ptr) {
 	char nv12_file_name[128];
 
 	while (privThread->eState == E_THREAD_RUNNING) {
-		ret = vp_codec_get_output(&vpp_box->m_decode_context, &decode_frame, VP_GET_FRAME_TIMEOUT);
+		ret = vp_codec_get_output(&vpp_box->m_decode_context, &decode_frame, VP_DECODER_GET_FRAME_TIMEOUT);
 		if (ret != 0) {
 			usleep(30 * 1000);
 			continue;
@@ -327,7 +328,7 @@ static void *get_decode_output_thread(void *ptr) {
 	return NULL;
 }
 
-int32_t vpp_box_init_param(void)
+int32_t vpp_box_init_param_full(solution_cfg_t *solution_config)
 {
 	int i, ret = 0;
 
@@ -344,9 +345,9 @@ int32_t vpp_box_init_param(void)
 		g_vpp_box[i].m_decode_context.codec_id = MEDIA_CODEC_ID_NONE;
 	}
 
-	for (i = 0; i < g_solution_config.box_solution.pipeline_count; i++) {
+	for (i = 0; i < solution_config->box_solution.pipeline_count; i++) {
 		vpp_box = &g_vpp_box[i];
-		cfg_box_vpp = &g_solution_config.box_solution.box_vpp[i];
+		cfg_box_vpp = &solution_config->box_solution.box_vpp[i];
 		strncpy(vpp_box->m_stream_path, cfg_box_vpp->stream,
 				sizeof(vpp_box->m_stream_path) - 1);
 
@@ -360,12 +361,18 @@ int32_t vpp_box_init_param(void)
 		}
 
 		// 配置编码通道
-		ret = vp_encode_config_param(&vpp_box->m_encode_context,
-			VP_GET_MD_CODEC_TYPE(cfg_box_vpp->encode_type),
-			cfg_box_vpp->encode_width,
-			cfg_box_vpp->encode_height,
-			cfg_box_vpp->encode_frame_rate,
-			cfg_box_vpp->encode_bitrate, false);
+		media_codec_user_config_t *codec_user_config = &g_vpp_box[i].m_encode_user_config;
+		codec_user_config->bit_rate = cfg_box_vpp->encode_bitrate;
+		codec_user_config->codec_type =VP_GET_MD_CODEC_TYPE(cfg_box_vpp->encode_type);
+		codec_user_config->frame_rate = cfg_box_vpp->encode_frame_rate;
+		codec_user_config->width = cfg_box_vpp->encode_width;
+		codec_user_config->height = cfg_box_vpp->encode_height;
+
+		codec_user_config->input_buffer_is_extrenal = false;
+		codec_user_config->input_buffer_count = 5;
+		codec_user_config->output_buffer_count = 5;
+
+		ret = vp_encode_config_param(&vpp_box->m_encode_context, codec_user_config);
 		if (ret != 0) {
 			SC_LOGE("Encode config param error, type:%d width:%d height:%d"
 				" frame_rate: %d bit_rate:%d\n",
@@ -431,6 +438,36 @@ int32_t vpp_box_init_param(void)
 	}
 
 	return ret;
+}
+int32_t vpp_box_init_param(void)
+{
+	return vpp_box_init_param_full(&g_solution_config);
+}
+
+int32_t vpp_box_ion_param_get(solution_cfg_t* solution_cfg, solution_ion_param_info_t *solution_param_info){
+	return 0;
+}
+int32_t vpp_box_vpu_param_get(solution_cfg_t* solution_cfg, solution_vpu_param_info_t *solution_param_info){
+	solution_cfg_box_vpp_t *cfg_box_vpp = NULL;
+	solution_param_info->valid_count = 0;
+	for (int i = 0; i < solution_cfg->box_solution.pipeline_count; i++) {
+		cfg_box_vpp = &solution_cfg->box_solution.box_vpp[i];
+		vp_codec_usr_param_single_t *param_single = &solution_param_info->params[solution_param_info->valid_count];
+		param_single->encode.width = cfg_box_vpp->encode_width;
+		param_single->encode.height = cfg_box_vpp->encode_height;
+		param_single->encode.fps = cfg_box_vpp->encode_frame_rate;
+
+		param_single->decode.width = cfg_box_vpp->decode_width;
+		param_single->decode.height = cfg_box_vpp->decode_height;
+		param_single->decode.fps = cfg_box_vpp->decode_frame_rate;
+		solution_param_info->valid_count++;
+
+		SC_LOGI("vpp_box_vpu_param_get [%d] [encode:%d %d %d] [decode:%d %d %d]",
+			solution_param_info->valid_count,
+			param_single->encode.width, param_single->encode.height, param_single->encode.fps,
+			param_single->decode.width, param_single->decode.height, param_single->decode.fps);
+	}
+	return 0;
 }
 
 int32_t vpp_box_init(void)

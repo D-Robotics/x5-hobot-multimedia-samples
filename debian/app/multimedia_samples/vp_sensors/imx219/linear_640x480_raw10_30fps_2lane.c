@@ -72,6 +72,13 @@ static vin_node_attr_t imx219_vin_node_attr = {
 	},
 };
 
+static vin_attr_ex_t vin_attr_ex = {
+	.vin_attr_ex_mask = 0x80,
+	.mclk_ex_attr = {
+		.mclk_freq = 24000000,
+	},
+};
+
 static vin_ichn_attr_t imx219_vin_ichn_attr = {
 	.width = SENSOR_WIDTH,
 	.height = SENSOR_HEIGHT,
@@ -122,6 +129,7 @@ vp_sensor_config_t imx219_linear_640x480_raw10_30fps_2lane = {
 	.camera_config = &imx219_camera_config,
 	.vin_ichn_attr = &imx219_vin_ichn_attr,
 	.vin_node_attr = &imx219_vin_node_attr,
+	.vin_attr_ex   = &vin_attr_ex,
 	.vin_ochn_attr = &imx219_vin_ochn_attr,
 	.isp_attr      = &imx219_isp_attr,
 	.isp_ichn_attr = &imx219_isp_ichn_attr,

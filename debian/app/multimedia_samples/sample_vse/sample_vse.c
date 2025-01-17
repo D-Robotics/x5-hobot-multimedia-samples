@@ -32,9 +32,12 @@
 
 typedef struct scaler_info
 {
+	hbn_vflow_handle_t vflow_fd;
+	hbn_vnode_handle_t vnode_fd;
 	uint32_t input_width;
 	uint32_t input_height;
 	char* yuv_file;
+	int vse_vnode_mode;
 } scaler_info_s;
 
 static int verbose_flag = 0;
@@ -43,12 +46,15 @@ static struct option const long_options[] = {
 	{"input_file", required_argument, NULL, 'i'},
 	{"input_width", required_argument, NULL, 'w'},
 	{"input_height", required_argument, NULL, 'h'},
+	{"feedback", no_argument, NULL, 'f'},
 	{"verbose", no_argument, NULL, 'V'},
 	{NULL, 0, NULL, 0}
 };
 
 int read_nv12_image(scaler_info_s *scaler_info, hbn_vnode_image_t *input_image);
-int create_and_run_vflow(scaler_info_s *scaler_info, hbn_vnode_image_t *input_image);
+int run_vse(scaler_info_s *scaler_info, hbn_vnode_image_t *input_image);
+int create_start_vse_vnode(scaler_info_s *scaler_info);
+int stop_destroy_vse_vnode(scaler_info_s *scaler_info);
 
 static void print_help() {
 	printf("Usage: sample_vse [OPTIONS]\n");
@@ -56,6 +62,7 @@ static void print_help() {
 	printf("-i, --input_file FILE\tSpecify the input file\n");
 	printf("-w, --input_width WIDTH\tSpecify the input width\n");
 	printf("-h, --input_height HEIGHT\tSpecify the input height\n");
+	printf("-f, --feedback \t\t\tSpecify feedback mode\n");
 	printf("-V, --verbose\t\tEnable verbose mode\n");
 }
 
@@ -72,7 +79,7 @@ int main(int argc, char** argv) {
 		return 0;
 	}
 
-	while((c = getopt_long(argc, argv, "i:w:h:V",
+	while((c = getopt_long(argc, argv, "i:w:h:Vf",
 							long_options, &opt_index)) != -1) {
 		switch (c)
 		{
@@ -85,15 +92,18 @@ int main(int argc, char** argv) {
 			case 'h':
 				scaler_info.input_height = atoi(optarg);
 				break;
+			case 'f':
+				scaler_info.vse_vnode_mode = VNODE_WORK_MODE_FEEDBACK;
+				break;
 			case 'V':
 				verbose_flag = 1;
 				break;
-
 			default:
 				print_help();
 				return 0;
 		}
 	}
+	printf("VSE vnode work mode: %s\n", (scaler_info.vse_vnode_mode == VNODE_WORK_MODE_VFLOW)?"vflow":"feedback");
 	printf("Using input file:%s, input:%dx%d\n",
 			scaler_info.yuv_file,
 			scaler_info.input_width, scaler_info.input_height);
@@ -102,7 +112,11 @@ int main(int argc, char** argv) {
 	ERR_CON_EQ(ret, 0);
 	ret = read_nv12_image(&scaler_info, &input_image);
 	ERR_CON_EQ(ret, 0);
-	ret = create_and_run_vflow(&scaler_info, &input_image);
+	ret = create_start_vse_vnode(&scaler_info);
+	ERR_CON_EQ(ret, 0);
+	ret = run_vse(&scaler_info, &input_image);
+	ERR_CON_EQ(ret, 0);
+	ret = stop_destroy_vse_vnode(&scaler_info);
 	ERR_CON_EQ(ret, 0);
 	ret = hb_mem_free_buf(input_image.buffer.fd[0]);
 	hb_mem_module_close();
@@ -213,22 +227,59 @@ void vp_vin_print_hb_mem_graphic_buf_t(const hb_mem_graphic_buf_t *graphic_buf) 
 	printf("\n");
 }
 
-int create_and_run_vflow(scaler_info_s *scaler_info, hbn_vnode_image_t *input_image) {
+int run_vse(scaler_info_s *scaler_info, hbn_vnode_image_t *input_image) {
+	int ret;
+	uint32_t chn_id = 0;
+	int timeout = 1000;
+	hbn_vnode_image_t output_img = {0};
+	char output_image_path[128] = {0};
+
+	if (verbose_flag) {
+		vp_vin_print_hbn_vnode_image_t(input_image);
+	}
+
+	// 发送帧并获取输出图像
+	ret = hbn_vnode_sendframe(scaler_info->vnode_fd, 0, input_image);
+	ERR_CON_EQ(ret, 0);
+
+	// 循环处理每个输出通道
+	for (chn_id = 0; chn_id < VSE_MAX_CHANNELS; chn_id++) {
+		ret = hbn_vnode_getframe(scaler_info->vnode_fd, chn_id, timeout, &output_img);
+		ERR_CON_EQ(ret, 0);
+
+		if (verbose_flag) {
+			vp_vin_print_hbn_vnode_image_t(&output_img);
+		}
+
+		// 根据当前输出通道属性设置输出文件路径
+		snprintf(output_image_path, sizeof(output_image_path),
+			"./vse_output_nv12_chn%d_%dx%d_stride_%d.yuv",
+			chn_id, output_img.buffer.width, output_img.buffer.height,
+			output_img.buffer.stride);
+		// 保存输出图像到文件
+		dump_2plane_yuv_to_file(output_image_path,
+						output_img.buffer.virt_addr[0],
+						output_img.buffer.virt_addr[1],
+						output_img.buffer.size[0],
+						output_img.buffer.size[1]);
+
+		// 释放输出图像内存
+		ret = hbn_vnode_releaseframe(scaler_info->vnode_fd, chn_id, &output_img);
+		ERR_CON_EQ(ret, 0);
+	}
+	return 0;
+}
+
+int create_start_vse_vnode(scaler_info_s *scaler_info) {
 	int ret = 0;
 	uint32_t hw_id = 0;
-	uint32_t chn_id = 0;
-	hbn_vflow_handle_t vflow_fd;
-	hbn_vnode_handle_t vnode_fd;
 	hbn_buf_alloc_attr_t alloc_attr = {0};
-	hbn_vnode_image_t output_img = {0};
-	char output_image_path[128];
 
 	vse_attr_t vse_attr = {0};
 	vse_ichn_attr_t vse_ichn_attr = {0};
 	vse_ochn_attr_t vse_ochn_attr[VSE_MAX_CHANNELS] = {0};
 	uint32_t input_width = 0;
 	uint32_t input_height = 0;
-	int timeout = 1000;
 
 	input_width = scaler_info->input_width;
 	input_height = scaler_info->input_height;
@@ -280,13 +331,13 @@ int create_and_run_vflow(scaler_info_s *scaler_info, hbn_vnode_image_t *input_im
 	vse_ochn_attr[5].target_w = (input_width * 2) > 4096 ? 4096 : (input_width * 2);
 	vse_ochn_attr[5].target_h = (input_height * 2) > 3076 ? 3076 : (input_height * 2);
 
-	ret = hbn_vnode_open(HB_VSE, hw_id, AUTO_ALLOC_ID, &vnode_fd);
+	ret = hbn_vnode_open(HB_VSE, hw_id, AUTO_ALLOC_ID, &scaler_info->vnode_fd);
 	ERR_CON_EQ(ret, 0);
 
-	ret = hbn_vnode_set_attr(vnode_fd, &vse_attr);
+	ret = hbn_vnode_set_attr(scaler_info->vnode_fd, &vse_attr);
 	ERR_CON_EQ(ret, 0);
 
-	ret = hbn_vnode_set_ichn_attr(vnode_fd, 0, &vse_ichn_attr);
+	ret = hbn_vnode_set_ichn_attr(scaler_info->vnode_fd, 0, &vse_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 
 	alloc_attr.buffers_num = 3;
@@ -295,58 +346,50 @@ int create_and_run_vflow(scaler_info_s *scaler_info, hbn_vnode_image_t *input_im
 
 	for (int i = 0; i < VSE_MAX_CHANNELS; ++i) {
 		printf("hbn_vnode_set_ochn_attr: %d, %dx%d\n", i, vse_ochn_attr[i].target_w, vse_ochn_attr[i].target_h);
-		ret = hbn_vnode_set_ochn_attr(vnode_fd, i, &vse_ochn_attr[i]);
+		ret = hbn_vnode_set_ochn_attr(scaler_info->vnode_fd, i, &vse_ochn_attr[i]);
 		ERR_CON_EQ(ret, 0);
-		ret = hbn_vnode_set_ochn_buf_attr(vnode_fd, i, &alloc_attr);
+		ret = hbn_vnode_set_ochn_buf_attr(scaler_info->vnode_fd, i, &alloc_attr);
 		ERR_CON_EQ(ret, 0);
 	}
 
-	ret = hbn_vflow_create(&vflow_fd);
-	ERR_CON_EQ(ret, 0);
-	ret = hbn_vflow_add_vnode(vflow_fd, vnode_fd);
-	ERR_CON_EQ(ret, 0);
-	ret = hbn_vflow_start(vflow_fd);
-	ERR_CON_EQ(ret, 0);
-
-	if (verbose_flag) {
-		vp_vin_print_hbn_vnode_image_t(input_image);
+	switch (scaler_info->vse_vnode_mode) {
+		case VNODE_WORK_MODE_VFLOW:
+			ret = hbn_vflow_create(&scaler_info->vflow_fd);
+			ERR_CON_EQ(ret, 0);
+			ret = hbn_vflow_add_vnode(scaler_info->vflow_fd, scaler_info->vnode_fd);
+			ERR_CON_EQ(ret, 0);
+			ret = hbn_vflow_start(scaler_info->vflow_fd);
+			ERR_CON_EQ(ret, 0);
+			break;
+		case VNODE_WORK_MODE_FEEDBACK:
+			ret = hbn_vnode_start(scaler_info->vnode_fd);
+			ERR_CON_EQ(ret, 0);
+			break;
+		default:
+			printf("Unknow VSE vnode work mode[%d]\n", scaler_info->vse_vnode_mode);
+			break;
 	}
-
-	// 发送帧并获取输出图像
-	ret = hbn_vnode_sendframe(vnode_fd, 0, input_image);
-	ERR_CON_EQ(ret, 0);
-
-	// 循环处理每个输出通道
-	for (chn_id = 0; chn_id < VSE_MAX_CHANNELS; chn_id++) {
-		ret = hbn_vnode_getframe(vnode_fd, chn_id, timeout, &output_img);
-		ERR_CON_EQ(ret, 0);
-
-		if (verbose_flag) {
-			vp_vin_print_hbn_vnode_image_t(&output_img);
-		}
-
-		// 根据当前输出通道属性设置输出文件路径
-		snprintf(output_image_path, sizeof(output_image_path),
-			"./vse_output_nv12_chn%d_%dx%d_stride_%d.yuv",
-			chn_id, output_img.buffer.width, output_img.buffer.height,
-			output_img.buffer.stride);
-		// 保存输出图像到文件
-		dump_2plane_yuv_to_file(output_image_path,
-						output_img.buffer.virt_addr[0],
-						output_img.buffer.virt_addr[1],
-						output_img.buffer.size[0],
-						output_img.buffer.size[1]);
-
-		// 释放输出图像内存
-		ret = hbn_vnode_releaseframe(vnode_fd, chn_id, &output_img);
-		ERR_CON_EQ(ret, 0);
-
-	}
-
-	ret = hbn_vflow_stop(vflow_fd);
-	ERR_CON_EQ(ret, 0);
-	hbn_vnode_close(vnode_fd);
-	hbn_vflow_destroy(vflow_fd);
 
 	return ret;
+}
+
+int stop_destroy_vse_vnode(scaler_info_s *scaler_info) {
+	int ret;
+	switch (scaler_info->vse_vnode_mode) {
+		case VNODE_WORK_MODE_VFLOW:
+			ret = hbn_vflow_stop(scaler_info->vflow_fd);
+			ERR_CON_EQ(ret, 0);
+			hbn_vnode_close(scaler_info->vnode_fd);
+			hbn_vflow_destroy(scaler_info->vflow_fd);
+			break;
+		case VNODE_WORK_MODE_FEEDBACK:
+			ret = hbn_vnode_stop(scaler_info->vnode_fd);
+			ERR_CON_EQ(ret, 0);
+			hbn_vnode_close(scaler_info->vnode_fd);
+			break;
+		default:
+			printf("Unknow VSE vnode work mode[%d]\n", scaler_info->vse_vnode_mode);
+			break;
+	}
+	return 0;
 }

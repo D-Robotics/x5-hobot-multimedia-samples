@@ -443,6 +443,8 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 	char ws_msg[WS_MAX_BUFFER + 64] = {0};
 	int stream_chn_count = -1;
 	unsigned int venc_chns_status = 0;
+	int check_param_is_error = 0;
+	T_SDK_CHECK_INFO check_info;
 
 	if (root == NULL) return -1;
 
@@ -457,6 +459,10 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 			break;
 		case WS_CMD_SWITCH_SOLUTION:
 			strcpy(cmd_context, cJSON_GetObjectItem(root, "param")->valuestring);
+			print_json = cJSON_Parse(cmd_context);
+			SC_LOGI("%s", cJSON_Print(print_json));
+			free(print_json);
+
 			// 1. 先stop、反初始化vin 、isp、vps、 venc 和 rtps 删除sms
 			SC_LOGI("========================== DEL SMS ==========================");
 			SDK_Cmd_Impl(SDK_CMD_RTSP_SERVER_DEL_SMS, NULL);
@@ -467,13 +473,23 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 			SC_LOGI("==================== UNINIT VPP SOLUTION ====================");
 			SDK_Cmd_Impl(SDK_CMD_VPP_UNINIT, NULL);
 
-			// 2. 更新配置结构体
-			SC_LOGI("================= SET VPP SOLUTION ====================");
-			SDK_Cmd_Impl(SDK_CMD_VPP_SET_SOLUTION_CONFIG, (void *)cmd_context);
-			print_json = cJSON_Parse(cmd_context);
-			SC_LOGI("%s", cJSON_Print(print_json));
-			free(print_json);
+			//放到stop pipeline 的后面
+			SC_LOGI("================= CHECK VPP SOLUTION ====================");
+			check_info.param = cmd_context;
+			check_info.ion_lack = 0;
+			check_info.vpu_lack = 0.0;
+			SDK_Cmd_Impl(SDK_CMD_VPP_CHECK_SOLUTION_CONFIG, (void *)&check_info);
 
+			if((check_info.ion_lack != 0) || (check_info.vpu_lack != 0.0)){
+				// 2. 不更新配置结构体（上传错误信息）
+				check_param_is_error = 1;
+				SC_LOGE("solution param check failed: [ion_lack:%d] [vpu_lack:%f], so ignore this process.",
+					check_info.ion_lack, check_info.vpu_lack);
+			}else{
+				// 2. 更新配置结构体
+				SC_LOGI("================= SET VPP SOLUTION ====================");
+				SDK_Cmd_Impl(SDK_CMD_VPP_SET_SOLUTION_CONFIG, (void *)cmd_context);
+			}
 			// 3. 开始启动应用
 			SC_LOGI("================= INIT VPP SOLUTION ====================");
 			ret = SDK_Cmd_Impl(SDK_CMD_VPP_INIT, NULL);
@@ -481,7 +497,7 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 			{
 				SC_LOGE("SDK_Cmd_Impl: SDK_CMD_VPP_INIT Error, ERRCODE: %d", ret);
 				ws_send_respose(ws_lst, ws_clt, "{\"kind\":1,\"app_status\": \"请检查sensor是否连接正常\"}");
-				return -1;
+				exit(-1);
 			}
 
 			usleep(500*1000);
@@ -490,9 +506,9 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 			ret = SDK_Cmd_Impl(SDK_CMD_VPP_START, NULL);
 			if(ret < 0)
 			{
-				SC_LOGE("SDK_Cmd_Impl: SDK_CMD_VPP_START Error, ERRCODE: %d", ret);
+				SC_LOGE("SDK_Cmd_Impl: SDK_CMD_VPP_START Error, ERRCODE: %d, so exit(-1)", ret);
 				ws_send_respose(ws_lst, ws_clt, "{\"kind\":1,\"app_status\": \"请检查sensor是否连接正常\"}");
-				return -1;
+				exit(-1);
 			}
 
 			usleep(500*1000);
@@ -505,7 +521,33 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 				if (venc_chns_status & (1 << i))
 					_do_add_sms(i); // 给对应的编码数据建立rtsp推流sms
 			}
-			ws_send_respose(ws_lst, ws_clt, "{\"kind\":1,\"Status\":\"200\"}");
+
+			if(check_param_is_error){
+				//获取当前的配置，传递给网页端
+				char config_str[WS_MAX_BUFFER] = {0};
+				SDK_Cmd_Impl(SDK_CMD_VPP_GET_SOLUTION_CONFIG, (void *)config_str);
+
+				memset(ws_msg, '\0', sizeof(ws_msg));
+				if(check_info.ion_lack != 0){
+					snprintf(ws_msg, sizeof(ws_msg),
+						"{\"kind\":1,\"app_status\": \"配置失败:ION内存不足, 缺少%dB, 点击确定恢复配置\", \"solution_configs\": %s}",
+						check_info.ion_lack, config_str);
+				}else if(check_info.vpu_lack != 0.0){
+					snprintf(ws_msg, sizeof(ws_msg),
+						"{\"kind\":1,\"app_status\": \"配置失败:VPU缺少%.1f倍1080P30的能力, 点击确定恢复配置\", \"solution_configs\": %s}",
+						check_info.vpu_lack, config_str);
+				}else{
+					SC_LOGE("should not run here.");
+					exit(-1);
+				}
+
+
+				SC_LOGI("Not support current config, so send old config to web: %s", ws_msg);
+				ws_send_respose(ws_lst, ws_clt, ws_msg);
+
+			}else{
+				ws_send_respose(ws_lst, ws_clt, "{\"kind\":1,\"Status\":\"200\"}");
+			}
 			break;
 		case WS_CMD_SNAP:
 			cJSON *param_item = cJSON_GetObjectItemCaseSensitive(root, "param");

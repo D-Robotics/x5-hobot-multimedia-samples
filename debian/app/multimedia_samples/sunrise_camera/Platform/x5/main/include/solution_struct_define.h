@@ -303,6 +303,12 @@ typedef struct
 	int				val;
 }solution_adc_ctrl_t;
 
+typedef struct
+{
+	char *param;
+	int ion_lack;
+	float vpu_lack; //单位: 1080P30
+}solution_check_info_t;
 ////////////////////////////////////////////////////////////////////
 
 #endif

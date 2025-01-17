@@ -41,7 +41,7 @@ static mipi_config_t sc035hgs_mipi_config = {
 static camera_config_t sc035hgs_camera_config = {
 	.name = "sc035hgs",
 	.addr = 0x30, // 0x31
-	.sensor_mode = 1,
+	.sensor_mode = 6,
 	.fps = SENSOE_FPS,
 	.format = RAW10,
 	.width = SENSOR_WIDTH,
@@ -67,41 +67,48 @@ static vin_node_attr_t sc035hgs_vin_node_attr = {
 
 	},
 	.lpwm_attr = {
-		.enable = 0,
+		.enable = 1,
 		.lpwm_chn_attr = {
-			{	.trigger_source = 0,
-				.trigger_mode = 0,
-				.period = 33333,
-				.offset = 10,
-				.duty_time = 100,
+			{	.trigger_source = 10,  // 使用SIF作为触发源
+				.trigger_mode = 1,     // 使用外部触发模式
+				.period = 33332,       // period = 1000000 / 30fps - 1, (需要减1，由于硬件实际生效为 period + 1)
+				.offset = 11,          // LPWM输出方波与触发源之间的间隔, 硬件实际生效为10us
+				.duty_time = 99,       // 高电平有效时间 100us, (需要减1, 由于硬件实际生效为 duty_time + 1)
 				.threshold = 0,
 				.adjust_step = 0,
 			},
-			{	.trigger_source = 0,
-				.trigger_mode = 0,
-				.period = 33333,
-				.offset = 10,
-				.duty_time = 100,
+			{	.trigger_source = 10,
+				.trigger_mode = 1,
+				.period = 33332,
+				.offset = 11,
+				.duty_time = 99,
 				.threshold = 0,
 				.adjust_step = 0,
 			},
-			{	.trigger_source = 0,
-				.trigger_mode = 0,
-				.period = 33333,
-				.offset = 10,
-				.duty_time = 100,
+			{	.trigger_source = 10,
+				.trigger_mode = 1,
+				.period = 33332,
+				.offset = 11,
+				.duty_time = 99,
 				.threshold = 0,
 				.adjust_step = 0,
 			},
-			{	.trigger_source = 0,
-				.trigger_mode = 0,
-				.period = 33333,
-				.offset = 10,
-				.duty_time = 100,
+			{	.trigger_source = 10,
+				.trigger_mode = 1,
+				.period = 33332,
+				.offset = 11,
+				.duty_time = 99,
 				.threshold = 0,
 				.adjust_step = 0,
 			},
 		},
+	},
+};
+
+static vin_attr_ex_t sc035hgs_vin_attr_ex = {
+	.vin_attr_ex_mask = 0x80,
+	.mclk_ex_attr = {
+		.mclk_freq = 24000000,
 	},
 };
 
@@ -149,12 +156,13 @@ static isp_ochn_attr_t sc035hgs_isp_ochn_attr = {
 
 vp_sensor_config_t sc035hgs_linear_640x480_raw10_30fps_1lane = {
 	.chip_id_reg = 0x3107,
-	.chip_id = 0x0035,
+	.chip_id = 0x005A,
 	.sensor_name = "sc035hgs",
 	.config_file = "linear_640x480_raw10_30fps_1lane.c",
 	.camera_config = &sc035hgs_camera_config,
 	.vin_ichn_attr = &sc035hgs_vin_ichn_attr,
 	.vin_node_attr = &sc035hgs_vin_node_attr,
+	.vin_attr_ex   = &sc035hgs_vin_attr_ex,
 	.vin_ochn_attr = &sc035hgs_vin_ochn_attr,
 	.isp_attr      = &sc035hgs_isp_attr,
 	.isp_ichn_attr = &sc035hgs_isp_ichn_attr,

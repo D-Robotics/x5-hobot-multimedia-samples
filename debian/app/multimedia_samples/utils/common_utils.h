@@ -46,6 +46,11 @@ extern "C" {
 		}\
 	} while(0)\
 
+typedef enum {
+	VNODE_WORK_MODE_VFLOW = 0,
+	VNODE_WORK_MODE_FEEDBACK,
+}vnode_work_mode_e;
+
 #define VSE_MAX_CHANNELS 6
 typedef struct camera_config_info_s{
 	int width;

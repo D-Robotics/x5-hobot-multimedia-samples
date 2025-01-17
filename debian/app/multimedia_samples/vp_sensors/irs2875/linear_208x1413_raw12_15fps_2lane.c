@@ -80,6 +80,13 @@ static vin_node_attr_t irs2875_vin_node_attr = {
 	},
 };
 
+static vin_attr_ex_t irs2875_vin_attr_ex = {
+	.vin_attr_ex_mask = 0x80,
+	.mclk_ex_attr = {
+		.mclk_freq = 24000000,
+	},
+};
+
 static vin_ichn_attr_t irs2875_vin_ichn_attr = {
 	.width = SENSOR_WIDTH,
 	.height = SENSOR_HEIGHT,
@@ -131,6 +138,7 @@ vp_sensor_config_t irs2875_linear_208x1413_raw12_15fps_2lane = {
 	.camera_config = &irs2875_camera_config,
 	.vin_ichn_attr = &irs2875_vin_ichn_attr,
 	.vin_node_attr = &irs2875_vin_node_attr,
+	.vin_attr_ex   = &irs2875_vin_attr_ex,
 	.vin_ochn_attr = &irs2875_vin_ochn_attr,
 	.isp_attr      = &irs2875_isp_attr,
 	.isp_ichn_attr = &irs2875_isp_ichn_attr,

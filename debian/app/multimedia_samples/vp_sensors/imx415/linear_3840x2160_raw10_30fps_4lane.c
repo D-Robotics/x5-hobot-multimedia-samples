@@ -76,6 +76,13 @@ static vin_node_attr_t imx415_vin_node_attr = {
 	},
 };
 
+static vin_attr_ex_t imx415_vin_attr_ex = {
+	.vin_attr_ex_mask = 0x80,
+	.mclk_ex_attr = {
+		.mclk_freq = 24000000,
+	},
+};
+
 static vin_ichn_attr_t imx415_vin_ichn_attr = {
 	.width = SENSOR_WIDTH,
 	.height = SENSOR_HEIGHT,
@@ -126,6 +133,7 @@ vp_sensor_config_t imx415_linear_3480x2160_raw10_30fps_4lane = {
 	.camera_config = &imx415_camera_config,
 	.vin_ichn_attr = &imx415_vin_ichn_attr,
 	.vin_node_attr = &imx415_vin_node_attr,
+	.vin_attr_ex   = &imx415_vin_attr_ex,
 	.vin_ochn_attr = &imx415_vin_ochn_attr,
 	.isp_attr      = &imx415_isp_attr,
 	.isp_ichn_attr = &imx415_isp_ichn_attr,

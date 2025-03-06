@@ -53,7 +53,7 @@ static camera_config_t imx477_camera_config = {
 	.gpio_enable_bit = 0x01,
 	.gpio_level_bit = 0x00,
 	.mipi_cfg = &imx477_mipi_config,
-	.calib_lname = "/usr/hobot/bin/imx477_tuning_2016x1520.json",
+	.calib_lname = "/usr/hobot/bin/imx477_2016x1520_tuning.json",
 };
 
 static vin_node_attr_t imx477_vin_node_attr = {

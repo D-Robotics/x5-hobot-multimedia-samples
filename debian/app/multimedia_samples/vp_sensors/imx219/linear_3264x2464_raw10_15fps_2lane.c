@@ -53,7 +53,7 @@ static camera_config_t imx219_camera_config = {
 	.gpio_enable_bit = 0x01,
 	.gpio_level_bit = 0x00,
 	.mipi_cfg = &imx219_mipi_config,
-	.calib_lname = "/usr/hobot/bin/imx219_tuning_3264x2464.json",
+	.calib_lname = "/usr/hobot/bin/imx219_3264x2464_tuning.json",
 };
 
 static vin_node_attr_t imx219_vin_node_attr = {

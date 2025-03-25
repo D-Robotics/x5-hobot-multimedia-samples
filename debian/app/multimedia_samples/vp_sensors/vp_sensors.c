@@ -191,12 +191,19 @@ static int gpio_unexport(int gpio_number) {
 static int gpio_set_direction(int gpio_number, const char *direction) {
 	char filename[256];
 	FILE *fp;
+	int elapsed_time = 0;
+
 	snprintf(filename, sizeof(filename), "/sys/class/gpio/gpio%d/direction", gpio_number);
-	fp = fopen(filename, "w");
-	if (fp == NULL) {
-		printf("Error opening GPIO direction file for writing\n");
-		return -1;
-	}
+
+	while ((fp = fopen(filename, "w")) == NULL) {
+        if (elapsed_time >= 100) {
+            fprintf(stderr, "Timeout: Failed to open %s after 100ms: %s\n", filename, strerror(errno));
+            return -1;
+        }
+        usleep(1000);
+        elapsed_time += 1;
+    }
+
 	fprintf(fp, "%s", direction);
 	fclose(fp);
 	return 0;
@@ -664,7 +671,6 @@ static void should_used_csi(int *is_need_used_csi)
 			printf("[INFO] board_id is %s, so skip csi test for index 1\n", board_id);
 			is_need_used_csi[1] = false;// board 201 not use csi1
 		}
-
 		if (strncmp(board_id, "301", 3) == 0) {
 			printf("[INFO] board_id is %s, so skip csi test for index 1 and index 3\n", board_id);
 			is_need_used_csi[1] = false;// board 301 not use csi1 csi3
@@ -673,6 +679,11 @@ static void should_used_csi(int *is_need_used_csi)
 		if (strncmp(board_id, "302", 3) == 0) {
 			printf("[INFO] board_id is %s, so skip csi test for index 1 and index 3\n", board_id);
 			is_need_used_csi[1] = false;// board 302 not use csi1 csi3
+			is_need_used_csi[3] = false;
+		}
+		if (strncmp(board_id, "501", 3) == 0) {
+			printf("[INFO] board_id is %s, so skip csi test for index 1 and index 3\n", board_id);
+			is_need_used_csi[1] = false;// board 501 not use csi1 csi3
 			is_need_used_csi[3] = false;
 		}
 	} else {

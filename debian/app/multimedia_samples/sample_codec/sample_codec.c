@@ -705,8 +705,8 @@ int32_t vp_decode_config_param(media_codec_context_t *context, media_codec_id_t 
 	params->feed_mode = MC_FEEDING_MODE_FRAME_SIZE;
 	params->pix_fmt = MC_PIXEL_FORMAT_NV12;
 	params->bitstream_buf_size = (width * height * 3 / 2  + 0x3ff) & ~0x3ff;
-	params->bitstream_buf_count = 3;
-	params->frame_buf_count = 3;
+	params->bitstream_buf_count = 5;
+	params->frame_buf_count = 5;
 
 	switch (codec_type)
 	{

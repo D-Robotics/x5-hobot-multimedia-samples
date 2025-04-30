@@ -358,7 +358,7 @@ static void *send_yuv_to_bpu(void *ptr) {
 	return NULL;
 }
 
-int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
+int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg)
 {
 	int32_t i = 0, ret = 0;
 

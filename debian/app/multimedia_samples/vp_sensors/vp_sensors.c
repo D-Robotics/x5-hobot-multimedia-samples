@@ -671,21 +671,11 @@ static void should_used_csi(int *is_need_used_csi)
 			printf("[INFO] board_id is %s, so skip csi test for index 1\n", board_id);
 			is_need_used_csi[1] = false;// board 201 not use csi1
 		}
-		if (strncmp(board_id, "301", 3) == 0) {
+		if (board_id[0] == '3' || board_id[0] == '5') {
 			printf("[INFO] board_id is %s, so skip csi test for index 1 and index 3\n", board_id);
-			is_need_used_csi[1] = false;// board 301 not use csi1 csi3
+			is_need_used_csi[1] = false;
 			is_need_used_csi[3] = false;
-		}
-		if (strncmp(board_id, "302", 3) == 0) {
-			printf("[INFO] board_id is %s, so skip csi test for index 1 and index 3\n", board_id);
-			is_need_used_csi[1] = false;// board 302 not use csi1 csi3
-			is_need_used_csi[3] = false;
-		}
-		if (strncmp(board_id, "501", 3) == 0) {
-			printf("[INFO] board_id is %s, so skip csi test for index 1 and index 3\n", board_id);
-			is_need_used_csi[1] = false;// board 501 not use csi1 csi3
-			is_need_used_csi[3] = false;
-		}
+		}	
 	} else {
 		printf("read board_id file failed, so skip csi.\n");
 	}

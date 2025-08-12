@@ -571,7 +571,7 @@ int main(int argc, char** argv) {
 		return -1;
 	}
 	if(strcmp(param_config->output, "hdmi") == 0){
-		display_context.connector_id = 75;
+		display_context.connector_id = 74;
 		display_context.connector_type = DRM_MODE_CONNECTOR_HDMIA;
 	}else if(strcmp(param_config->output, "dsi") == 0){
 		display_context.connector_id = 73;

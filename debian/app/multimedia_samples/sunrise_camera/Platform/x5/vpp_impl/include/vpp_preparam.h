@@ -19,7 +19,9 @@
 #include "bpu_wrap.h"
 
 void* vpp_osd_set_timestamp_thread(void *ptr);
+void vpp_get_sub_stream_resolution(const int width, const int height, int *sub_width, int *sub_height);
 
+int32_t alloc_graphic_buffer(hbn_vnode_image_t *img, int w, int h, int32_t format);
 void vpp_graphic_buf_to_bpu_buffer_info(const hbn_vnode_image_t *src, bpu_buffer_info_t *dst);
 void vpp_video_frame_buffer_info_to_bpu_buffer_info(const mc_video_frame_buffer_info_t *src,
 	bpu_buffer_info_t *dst);

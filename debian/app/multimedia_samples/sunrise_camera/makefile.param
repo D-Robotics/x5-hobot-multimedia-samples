@@ -1,5 +1,7 @@
 PLATFORM := x5
 MODEL_TYPE := som
 
+VERSION = 4.0.0
+
 PRO_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 include ${PRO_ROOT}config/config_$(PLATFORM)_$(MODEL_TYPE).mk

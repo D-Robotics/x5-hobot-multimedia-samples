@@ -47,129 +47,111 @@
 #include "vpp_preparam.h"
 #include "vpp_box_impl.h"
 
+#define VPP_STEAM_COUNT 2
 #define VPP_BOX_MAX_CHANNELS 8
+typedef struct
+{
+	//for media server
+	char stream_name[128];
+	const char *media_type; 				//主码流和子码流 共同使用
+	void *media_handler;			 		//handler for MediaServer
+
+	//for codec
+	media_codec_context_t m_encode_context;
+	media_codec_user_config_t m_encode_user_config;
+
+	//for multi thread
+	tsThread 		m_venc_thread;			//从编码器获取图像, 发送给MediaServer
+
+	int vflow_chn;
+	void*   p_vpp_box;
+
+	uint64_t first_frame_timestamp;
+}vpp_codec_ctx_t;
 
 typedef struct
 {
 	int pipline_id;
+
+	//for decoder
+	tsThread 		m_vdec_thread;
 	char			m_stream_path[128];
-	media_codec_context_t m_decode_context;
 	vp_decode_param_t m_decode_param;
-
-	media_codec_user_config_t m_encode_user_config;
-	media_codec_context_t m_encode_context;
-
-	// 使能vse, 功能：
-	// 1. 把解码出来的图像缩放到编码通道的分辨率大小
-	// 2. 输出BPU 算法模型需要的图像
+	media_codec_context_t m_decode_context;
+	
+	//for vflow
+	tsThread m_vflow_thread;
 	vp_vflow_contex_t vp_vflow_contex;
 
+	//for bpu
 	bpu_handle_t	m_bpu_handle;
-
-	shm_stream_t 	*venc_shm; /* H264 H265 码流，最大支持32路 */
-	tsThread 		m_venc_thread; /* 图像编码、输出给vo、算法图像前处理 */
-	tsThread 		m_vdec_thread; /* 读取h264视频文件解码 */
-	tsThread		m_bpu_thread;
+	int m_vse_for_bpu_channel;
+	
+	//for main and sub stream
+	vpp_codec_ctx_t vpp_codec_ctxs[VPP_STEAM_COUNT];
 } vpp_box_t;
 
 static vpp_box_t g_vpp_box[VPP_BOX_MAX_CHANNELS];
-static int vse_chn = 1;
 
-static void vpp_box_push_stream(vpp_box_t *vpp_box, ImageFrame *stream, int pipline_id)
+static int32_t send_video_frame_info(int pipeline_id, int frame_id, int64_t timestamp)
 {
-	int32_t frame_rate = 0;
-	media_codec_id_t codec_type;
-	media_codec_context_t *codec_context = &vpp_box->m_encode_context;
+	int32_t ret = 0;
+	char *ws_msg = NULL;
 
-	media_codec_buffer_t *buffer = NULL;
+	ws_msg = malloc(200);
+	if (NULL == ws_msg) {
+		SC_LOGE("Failed to allocate memory for ws_msg");
+		return -1;
+	}
+	sprintf(ws_msg, "{\"kind\":11, \"pipeline\":%d, \"frame_id\":%d, \"timestamp\":%ld}", pipeline_id + 1, frame_id, timestamp);
+	ret = SDK_Cmd_Impl(SDK_CMD_WEBSOCKET_SEND_MSG, (void*)ws_msg);
+	free(ws_msg);
+	return ret;
+}
 
-	if(codec_context == NULL || stream == NULL) {
+static void vpp_box_push_stream(int pipline_id, vpp_codec_ctx_t *vpp_codec_ctx, ImageFrame *stream)
+{
+	if(stream == NULL) {
 		SC_LOGE("Param is NULL");
 		return;
 	}
+	media_codec_buffer_t *buffer = (media_codec_buffer_t *)(stream->frame_buffer);
 
-	codec_type = codec_context->codec_id;
-	frame_rate = vpp_box->m_encode_context.video_enc_params.rc_params.h264_cbr_params.frame_rate;
+	if(strcmp(vpp_codec_ctx->stream_name, "main") == 0){
+		send_video_frame_info(pipline_id, buffer->vstream_buf.src_idx, buffer->vstream_buf.pts);
+	}
 
-	buffer = (media_codec_buffer_t *)(stream->frame_buffer);
+	T_SDK_MEDIA_SRV_PUSH_PARAM push_param = {
+		.media = vpp_codec_ctx->media_handler,
+		.data = (const char*)buffer->vstream_buf.vir_ptr,
+		.data_length = buffer->vstream_buf.size,
+		.pts = buffer->vstream_buf.pts,
+		.dts = buffer->vstream_buf.pts,
+		.codec_name = vpp_codec_ctx->media_type
+	};
 
-	frame_info info;
-	info.type		= codec_type;
-	info.key		= pipline_id;
-	info.seq		= buffer->vstream_buf.src_idx;
-	info.pts		= buffer->vstream_buf.pts;
-	info.length		= buffer->vstream_buf.size;
-	info.t_time		= (unsigned int)time(0);
-	info.framerate	= frame_rate;
-	info.width		= vpp_box->m_encode_context.video_enc_params.width;
-	info.height		= vpp_box->m_encode_context.video_enc_params.height;
-
-	shm_stream_put(vpp_box->venc_shm, info, (unsigned char*)buffer->vstream_buf.vir_ptr, buffer->vstream_buf.size);
+	SDK_Cmd_Impl(SDK_CMD_MEDIA_SERVER_PUSH_DATA, &push_param);
 }
 
-static int32_t alloc_graphic_buffer(hbn_vnode_image_t *img, int w, int h, int32_t format)
-{
-	int32_t ret = 0;
-
-	// 一定需要是连续的内存buffer，否则解码出来的图像送进 vse 之后会有问题
-	int64_t flags = HB_MEM_USAGE_MAP_INITIALIZED |
-			HB_MEM_USAGE_PRIV_HEAP_2_RESERVERD |
-			HB_MEM_USAGE_CPU_READ_OFTEN |
-			HB_MEM_USAGE_CPU_WRITE_OFTEN |
-			HB_MEM_USAGE_CACHED |
-			HB_MEM_USAGE_GRAPHIC_CONTIGUOUS_BUF;
-	ret = hb_mem_alloc_graph_buf(w, h, format, flags, w, h, &img->buffer);
-	if (ret < 0)
-		return ret;
-
-	img->info.frame_id   = 0;
-	img->info.timestamps = 0;
-	img->info.frame_done  = 0;
-	img->info.bufferindex = 0;
-
-	return 0;
-}
-
-
-// 从解码器获取输出图像，然后送进vse模块
-// 从 vse 的第一个通道里面获取编码图像，然后送进编码器
-// 从 vse 的第二个通道里面获取编码图像，然后送进BPU模块
-static void *get_decode_output_thread(void *ptr) {
+static void *get_decode_and_vse_process_thread_func(void *ptr) {
 	int32_t ret = 0;
 	tsThread *privThread = (tsThread*)ptr;
-
-	ImageFrame decode_frame = {0};
-	ImageFrame vse_frame = {0};
-	ImageFrame encode_frame = {0};
-	ImageFrame encode_stream = {0};
-
-	hbn_vnode_image_t src_img = {0};
-
-	media_codec_buffer_t *decode_frame_buffer = NULL;
-	bpu_buffer_info_t bpu_input_buffer = {0};
-
 	vpp_box_t *vpp_box = (vpp_box_t *)privThread->pvThreadData;
 
+	ImageFrame decode_frame = {0};
 	if (vp_allocate_image_frame(&decode_frame) == NULL) {
 		SC_LOGE("vp_allocate_image_frame for decode_frame failed, so exit program.");
 		exit(-1);
 	}
 
+	ImageFrame vse_frame = {0};
 	if (vp_allocate_image_frame(&vse_frame) == NULL) {
 		SC_LOGE("vp_allocate_image_frame for vse_frame failed, so exit program.");
 		exit(-1);
 	}
-	if (vp_allocate_image_frame(&encode_frame) == NULL) {
-		SC_LOGE("vp_allocate_image_frame for encode_frame failed, so exit program.");
-		exit(-1);
-	}
-	if (vp_allocate_image_frame(&encode_stream) == NULL) {
-		SC_LOGE("vp_allocate_image_frame for encode_stream failed, so exit program.");
-		exit(-1);
-	}
-
 	mThreadSetName(privThread, __func__);
-
+	
+	hbn_vnode_image_t src_img = {0};
 	ret = alloc_graphic_buffer(&src_img,
 							vpp_box->vp_vflow_contex.vse_config.vse_ichn_attr.width,
 							vpp_box->vp_vflow_contex.vse_config.vse_ichn_attr.height,
@@ -179,8 +161,8 @@ static void *get_decode_output_thread(void *ptr) {
 		exit(-1);
 	}
 
-	char nv12_file_name[128];
 
+	int32_t vse_channel = vpp_box->m_vse_for_bpu_channel;
 	while (privThread->eState == E_THREAD_RUNNING) {
 		ret = vp_codec_get_output(&vpp_box->m_decode_context, &decode_frame, VP_DECODER_GET_FRAME_TIMEOUT);
 		if (ret != 0) {
@@ -188,161 +170,178 @@ static void *get_decode_output_thread(void *ptr) {
 			continue;
 		}
 
-		// 把解码后的数据送进vse模块，出两路图像
-		decode_frame_buffer = (media_codec_buffer_t *)decode_frame.frame_buffer;
-		vpp_video_frame_buffer_info_to_vnode_image(&decode_frame_buffer->vframe_buf,
-			vse_frame.hbn_vnode_image);
-
-		// SC_LOGW("+++++++++++++++++++ DECODE +++++++++++++++++++++++");
-		// vp_codec_print_media_codec_output_buffer_info(&decode_frame);
-
+		//构造 hbn_vnode_image_t， 解码器输出的是 common_buffer_t, 所以这里使用内存拷贝的方式
+		media_codec_buffer_t*decode_frame_buffer = (media_codec_buffer_t *)decode_frame.frame_buffer;
 		memcpy((char *)(src_img.buffer.virt_addr[0]),
 			decode_frame_buffer->vframe_buf.vir_ptr[0],
 			decode_frame_buffer->vframe_buf.width * decode_frame_buffer->vframe_buf.height);
 		memcpy((char *)(src_img.buffer.virt_addr[1]),
 			decode_frame_buffer->vframe_buf.vir_ptr[1],
 			decode_frame_buffer->vframe_buf.width * decode_frame_buffer->vframe_buf.height / 2);
-		// 使用解码出来的yuv的时间戳
 		src_img.info.tv.tv_sec = decode_frame_buffer->vframe_buf.pts / 1000000;
 		src_img.info.tv.tv_usec = decode_frame_buffer->vframe_buf.pts % 1000000;
-		// SC_LOGW("src_img.info.tv: %ld.%06ld\n", src_img.info.tv.tv_sec, src_img.info.tv.tv_usec);
-
-		if (log_ctrl_level_get(NULL) == LOG_TRACE) {
-			vp_vin_print_hbn_vnode_image_t(&src_img);
-
-			sprintf(nv12_file_name, "/tmp/box_vse_input_%dx%d_nv12_%ld.%06ld.yuv",
-				decode_frame_buffer->vframe_buf.width, decode_frame_buffer->vframe_buf.height,
-				src_img.info.tv.tv_sec, src_img.info.tv.tv_usec);
-			vp_dump_2plane_yuv_to_file(nv12_file_name,
-				src_img.buffer.virt_addr[0], src_img.buffer.virt_addr[1],
-				decode_frame_buffer->vframe_buf.width * decode_frame_buffer->vframe_buf.height,
-				decode_frame_buffer->vframe_buf.width * decode_frame_buffer->vframe_buf.height / 2);
-		}
+		src_img.info.timestamps = decode_frame_buffer->vframe_buf.pts;
 
 		ret = vp_vse_send_frame(&vpp_box->vp_vflow_contex, &src_img);
 		if (ret != 0) {
-			SC_LOGE("vp_vse_send_frame failed(%d)", ret);
-			continue;
+			SC_LOGE("pipeline %d vp_vse_send_frame failed(%d)", vpp_box->pipline_id, ret);
+			break;
 		}
 
-		// 编码推流的时间一般比较短，而且时间固定，但是算法的运算时间与模型的选择强相关，并且模型的运行时异步进行的，所以先处理算法
-		// 从第二通道获取数据给编码模块使用
-		if (strlen(vpp_box->m_bpu_handle.m_model_name) > 0) {
-			ret = vp_vse_get_frame(&vpp_box->vp_vflow_contex, vse_chn, &vse_frame);
-			if (ret != 0) {
-				// 当线程接收到退出信号时，getframe 接口会立即报超时退出
-				// 所以只有当线程是正常运行状态下的异常才属于真异常
-				if (privThread->eState == E_THREAD_RUNNING) {
-					SC_LOGE("vp_vse_get_frame chn %d failed(%d).",vse_chn, ret);
-				}
-				continue;
-			}
-
-			if (log_ctrl_level_get(NULL) == LOG_TRACE) {
-				sprintf(nv12_file_name, "/tmp/box_vse_chn1_%dx%d_nv12_size_%lu.yuv",
-					vse_frame.hbn_vnode_image->buffer.width, vse_frame.hbn_vnode_image->buffer.height,
-					vse_frame.hbn_vnode_image->buffer.size[0] + vse_frame.hbn_vnode_image->buffer.size[1]);
-				vp_dump_yuv_to_file(nv12_file_name,
-					vse_frame.hbn_vnode_image->buffer.virt_addr[0],
-					vse_frame.hbn_vnode_image->buffer.size[0] + vse_frame.hbn_vnode_image->buffer.size[1]);
-			}
-			// 把yuv数据送进bpu进行算法运算
-			// SC_LOGW("+++++++++++++++++++ VSE 0-1 +++++++++++++++++++++++");
-			// vp_vin_print_hbn_vnode_image_t(vse_frame.hbn_vnode_image);
-			memset(&bpu_input_buffer, 0, sizeof(bpu_buffer_info_t));
-			vpp_graphic_buf_to_bpu_buffer_info(vse_frame.hbn_vnode_image,
-				&bpu_input_buffer);
-			// 这个地方一定要设置，从vse 获取的图像的时间戳在 tv 里面，如果是sensor出来的图像，时间戳在 timestamps 里面
-			bpu_input_buffer.tv = src_img.info.tv;
-			// print_bpu_buffer_info(&bpu_input_buffer);
-
-			bpu_wrap_send_frame(&vpp_box->m_bpu_handle, &bpu_input_buffer);
-
-			vp_vse_release_frame(&vpp_box->vp_vflow_contex, vse_chn, &vse_frame);
-		}
-
-		// 从第一通道获取数据给编码模块使用
-		ret = vp_vse_get_frame(&vpp_box->vp_vflow_contex, 0, &vse_frame);
+		/**
+		 * 获取 BPU 通道的视频帧率, 两个目的：
+		 * 	1. 保证当前帧被VSE处理完成了，可以送入下一帧了
+		 *  2. BPU 使能时，作为BPU的前处理 
+		 */
+		ret = vp_vse_get_frame(&vpp_box->vp_vflow_contex, vse_channel, &vse_frame);
 		if (ret != 0) {
-			// 当线程接收到退出信号时，getframe 接口会立即报超时退出
-			// 所以只有当线程是正常运行状态下的异常才属于真异常
 			if (privThread->eState == E_THREAD_RUNNING) {
-				SC_LOGE("vp_vse_get_frame chn 0 failed(%d).", ret);
+				SC_LOGE("pipeline %d vp_vse_get_frame chn %d failed(%d).", 
+						vpp_box->pipline_id, vse_channel, ret);
 			}
-			continue;
+			break;
 		}
-
-		if (log_ctrl_level_get(NULL) == LOG_TRACE) {
-			vp_vin_print_hbn_vnode_image_t(vse_frame.hbn_vnode_image);
-
-			sprintf(nv12_file_name, "/tmp/box_vse_chn0_%dx%d_nv12_size_%lu.yuv",
-				vse_frame.hbn_vnode_image->buffer.width, vse_frame.hbn_vnode_image->buffer.height,
-				vse_frame.hbn_vnode_image->buffer.size[0] + vse_frame.hbn_vnode_image->buffer.size[1]);
-			vp_dump_yuv_to_file(nv12_file_name,
-				vse_frame.hbn_vnode_image->buffer.virt_addr[0],
-				vse_frame.hbn_vnode_image->buffer.size[0] + vse_frame.hbn_vnode_image->buffer.size[1]);
+		if (strlen(vpp_box->m_bpu_handle.m_model_name) > 0) {
+			bpu_buffer_info_t bpu_input_buffer = {0};
+			memset(&bpu_input_buffer, 0, sizeof(bpu_buffer_info_t));
+			vpp_graphic_buf_to_bpu_buffer_info(vse_frame.hbn_vnode_image, &bpu_input_buffer);
+			bpu_input_buffer.tv = src_img.info.tv;
+			bpu_wrap_send_frame(&vpp_box->m_bpu_handle, &bpu_input_buffer);
 		}
-		// SC_LOGW("+++++++++++++++++++ VSE 0-0 +++++++++++++++++++++++");
-		// vp_vin_print_hbn_vnode_image_t(vse_frame.hbn_vnode_image);
-		// 送进编码器
-		encode_frame.data[0] = vse_frame.hbn_vnode_image->buffer.virt_addr[0];
-		encode_frame.data_size[0] = vse_frame.hbn_vnode_image->buffer.size[0] + vse_frame.hbn_vnode_image->buffer.size[1];
-		encode_frame.image_timestamp = vse_frame.hbn_vnode_image->info.tv.tv_sec * 1000000
-			+ vse_frame.hbn_vnode_image->info.tv.tv_usec;
-		ret = vp_codec_set_input(&vpp_box->m_encode_context, &encode_frame, 0);
+		ret = vp_vse_release_frame(&vpp_box->vp_vflow_contex, vse_channel, &vse_frame);
 		if (ret != 0) {
-			SC_LOGE("vp_codec_set_input send encode frame failed(%d)", ret);
-			vp_vse_release_frame(&vpp_box->vp_vflow_contex, 0, &vse_frame);
-			continue;
+			SC_LOGE("pipeline %d vp_vse_release_frame failed", vpp_box->pipline_id);
+			break;
 		}
 
-		// 从编码器获取码流
-		ret = vp_codec_get_output(&vpp_box->m_encode_context, &encode_stream, VP_GET_FRAME_TIMEOUT);
+		ret = vp_codec_release_output(&vpp_box->m_decode_context, &decode_frame);
 		if (ret != 0) {
-			SC_LOGE("vp_codec_get_output get encode stream failed(%d)", ret);
-			vp_vse_release_frame(&vpp_box->vp_vflow_contex, 0, &vse_frame);
-			continue;
+			SC_LOGE("vp_codec_release_output failed");
+			break;
 		}
-
-		// SC_LOGW("+++++++++++++++++++ encode_stream +++++++++++++++++++++++");
-		// vp_codec_print_media_codec_output_buffer_info(&encode_stream);
-
-		// 推流
-		vpp_box_push_stream(vpp_box, &encode_stream, vpp_box->pipline_id);
-
-		// 把轮转 buffer queue 进队列
-		vp_codec_release_output(&vpp_box->m_encode_context, &encode_stream);
-		vp_vse_release_frame(&vpp_box->vp_vflow_contex, 0, &vse_frame);
-		vp_codec_release_output(&vpp_box->m_decode_context, &decode_frame);
-
-		// usleep(10 * 1000);
 	}
 	vp_free_image_frame(&decode_frame);
 	vp_free_image_frame(&vse_frame);
-	vp_free_image_frame(&encode_frame);
-	vp_free_image_frame(&encode_stream);
 
 	hb_mem_free_buf(src_img.buffer.fd[0]);
-
 	mThreadFinish(privThread);
+	return NULL;
+}
+
+static void* get_vse_and_codec_process_thread_func(void *ptr)
+{
+	int32_t ret = 0;
+
+	//handler
+	tsThread *privThread = (tsThread*)ptr;
+	vpp_codec_ctx_t *p_vpp_codec_ctx = (vpp_codec_ctx_t *)privThread->pvThreadData;
+	vpp_box_t *p_vpp_box = (vpp_box_t *)p_vpp_codec_ctx->p_vpp_box;
+
+	mThreadSetNameWidthIndex(privThread, __func__, p_vpp_box->pipline_id);
+
+	//for vflow
+	ImageFrame vse_frame = {0};
+	int vflow_chn = p_vpp_codec_ctx->vflow_chn;
+
+	ImageFrame encode_stream = {0};
+	//for frames
+	if (vp_allocate_image_frame(&vse_frame) == NULL) {
+		SC_LOGE("vp_allocate_image_frame for vse_frame failed, so exit program.");
+		exit(-1);
+	}
+	if (vp_allocate_image_frame(&encode_stream) == NULL) {
+		SC_LOGE("vp_allocate_image_frame for encode_stream failed, so exit program.");
+		exit(-1);
+	}
+
+	//for debug
+	int vflow_wait_count = 0;
+	uint8_t is_geted_codec_stream = 0;
+	while (privThread->eState == E_THREAD_RUNNING){
+
+		//get frame from vflow
+		ret = vp_vse_get_frame(&p_vpp_box->vp_vflow_contex, vflow_chn, &vse_frame);
+		if (ret != 0) {
+			vflow_wait_count++;
+			if (privThread->eState == E_THREAD_RUNNING) {
+				SC_LOGE("[%d] [%s] vp_vse_get_frame chn %d failed(%d), and wait %d.",
+						p_vpp_box->pipline_id, p_vpp_codec_ctx->stream_name, vflow_chn, ret, vflow_wait_count);
+				continue;
+			}else{
+				break;
+			}
+		}else{
+			vflow_wait_count = 0;
+		}
+
+		ret = vp_codec_encoder_set_input(&p_vpp_codec_ctx->m_encode_context, &vse_frame);
+		if(ret != 0){
+			if (privThread->eState == E_THREAD_RUNNING) {
+				SC_LOGE("pipline %d stream %s vp_codec_encoder_set_input failed !!!", p_vpp_box->pipline_id, p_vpp_codec_ctx->stream_name);
+			}
+			exit(-1); //无法处理
+		}
+
+		is_geted_codec_stream = 0;
+		while(privThread->eState == E_THREAD_RUNNING){
+			// 从编码器获取码流
+			ret = vp_codec_get_output(&p_vpp_codec_ctx->m_encode_context, &encode_stream, 2000);
+			if(ret != 0){
+				if (privThread->eState == E_THREAD_RUNNING) {
+					SC_LOGE("channel %d stream %s vp_codec_get_output failed %d.",
+						p_vpp_box->pipline_id, p_vpp_codec_ctx->stream_name, ret);
+				}
+				if(ret == -2){
+					continue;
+				}else{
+					exit(-1);
+				}
+			}else{
+				is_geted_codec_stream = 1;
+				break;
+			}
+		}
+
+		if(is_geted_codec_stream){
+			vpp_box_push_stream(p_vpp_box->pipline_id, p_vpp_codec_ctx, &encode_stream);
+		}
+
+		ret = vp_vse_release_frame(&p_vpp_box->vp_vflow_contex, vflow_chn, &vse_frame);
+		if (ret != 0) {
+			SC_LOGE("vp_vse_release_frame failed");
+			exit(-1);
+		}
+		ret = vp_codec_release_output(&p_vpp_codec_ctx->m_encode_context, &encode_stream);
+		if (ret != 0) {
+			SC_LOGE("vp_vse_release_frame failed");
+			exit(-1);
+		}
+	}
+
+	vp_free_image_frame(&encode_stream);
+	vp_free_image_frame(&vse_frame);
+	mThreadFinish(privThread);
+
+	SC_LOGI("channel %d stream %s codec thread exit.\n", p_vpp_box->pipline_id, p_vpp_codec_ctx->stream_name);
 	return NULL;
 }
 
 int32_t vpp_box_init_param_full(solution_cfg_t *solution_config)
 {
-	int i, ret = 0;
+	int i, ret = 0, vse_chn = 0;
 
 	vpp_box_t *vpp_box = NULL;
 	solution_cfg_box_vpp_t *cfg_box_vpp = NULL;
 	vse_config_t *vse_config = NULL;
-	int32_t input_width = 0, input_height = 0;
-	int32_t model_width = 0, model_height = 0;
 
 	memset(&g_vpp_box, 0, sizeof(g_vpp_box));
 
 	for (i = 0; i < VPP_BOX_MAX_CHANNELS; i++) {
-		g_vpp_box[i].m_encode_context.codec_id = MEDIA_CODEC_ID_NONE;
 		g_vpp_box[i].m_decode_context.codec_id = MEDIA_CODEC_ID_NONE;
+		for (int j = 0; j < VPP_STEAM_COUNT; j++){
+			vpp_codec_ctx_t *p_vpp_codec_ctx = &g_vpp_box[i].vpp_codec_ctxs[j];
+			p_vpp_codec_ctx->m_encode_context.codec_id = MEDIA_CODEC_ID_NONE;
+		}
 	}
 
 	for (i = 0; i < solution_config->box_solution.pipeline_count; i++) {
@@ -359,28 +358,38 @@ int32_t vpp_box_init_param_full(solution_cfg_t *solution_config)
 				sizeof(vpp_box->m_bpu_handle.m_model_name) - 1);
 			vpp_box->m_bpu_handle.m_model_name[sizeof(vpp_box->m_bpu_handle.m_model_name) - 1] = '\0';
 		}
-
+		int input_width = cfg_box_vpp->decode_width;
+		int input_height = cfg_box_vpp->decode_height;
+		
 		// 配置编码通道
-		media_codec_user_config_t *codec_user_config = &g_vpp_box[i].m_encode_user_config;
-		codec_user_config->bit_rate = cfg_box_vpp->encode_bitrate;
-		codec_user_config->codec_type =VP_GET_MD_CODEC_TYPE(cfg_box_vpp->encode_type);
-		codec_user_config->frame_rate = cfg_box_vpp->encode_frame_rate;
-		codec_user_config->width = cfg_box_vpp->encode_width;
-		codec_user_config->height = cfg_box_vpp->encode_height;
+		for (int j = 0; j < VPP_STEAM_COUNT; j++){
+			vpp_codec_ctx_t *p_vpp_codec_ctx = &vpp_box->vpp_codec_ctxs[j];
+			p_vpp_codec_ctx->p_vpp_box = vpp_box;
+			int target_w = cfg_box_vpp->encode_width;
+			int target_h = cfg_box_vpp->encode_height;
+			if(j != 0){
+				vpp_get_sub_stream_resolution(input_width, input_height, &target_w, &target_h);
+			}
+			media_codec_user_config_t *codec_user_config = &p_vpp_codec_ctx->m_encode_user_config;
+			codec_user_config->bit_rate = cfg_box_vpp->encode_bitrate;
+			codec_user_config->codec_type = VP_GET_MD_CODEC_TYPE(cfg_box_vpp->encode_type);
+			codec_user_config->frame_rate = cfg_box_vpp->encode_frame_rate;
+			codec_user_config->width = target_w;
+			codec_user_config->height = target_h;
 
-		codec_user_config->input_buffer_is_extrenal = false;
-		codec_user_config->input_buffer_count = 5;
-		codec_user_config->output_buffer_count = 5;
-
-		ret = vp_encode_config_param(&vpp_box->m_encode_context, codec_user_config);
-		if (ret != 0) {
-			SC_LOGE("Encode config param error, type:%d width:%d height:%d"
-				" frame_rate: %d bit_rate:%d\n",
-				VP_GET_MD_CODEC_TYPE(cfg_box_vpp->encode_type),
-				cfg_box_vpp->encode_width,
-				cfg_box_vpp->encode_height,
-				cfg_box_vpp->encode_frame_rate,
-				cfg_box_vpp->encode_bitrate);
+			codec_user_config->input_buffer_is_extrenal = true;
+			codec_user_config->input_buffer_count = 0;
+			codec_user_config->output_buffer_count = 5;
+			ret = vp_encode_config_param(&p_vpp_codec_ctx->m_encode_context, codec_user_config);
+			if (ret != 0) {
+				SC_LOGE("Encode config param error, type:%d width:%d height:%d"
+					" frame_rate: %d bit_rate:%d\n",
+					VP_GET_MD_CODEC_TYPE(cfg_box_vpp->encode_type),
+					cfg_box_vpp->encode_width,
+					cfg_box_vpp->encode_height,
+					cfg_box_vpp->encode_frame_rate,
+					cfg_box_vpp->encode_bitrate);
+			}
 		}
 
 		// 配置解码通道
@@ -398,43 +407,61 @@ int32_t vpp_box_init_param_full(solution_cfg_t *solution_config)
 
 		// 配置 vse 模块
 		vse_config = &vpp_box->vp_vflow_contex.vse_config;
-		input_width = cfg_box_vpp->decode_width;
-		input_height = cfg_box_vpp->decode_height;
-
 		vse_config->vse_ichn_attr.width =input_width;
 		vse_config->vse_ichn_attr.height = input_height;
 		vse_config->vse_ichn_attr.fmt = FRM_FMT_NV12;
 		vse_config->vse_ichn_attr.bit_width = 8;
+		SC_LOGD("pipeline %d: input_width: %d input_height: %d", i, input_width, input_height);
+		for (int j = 0; j < VPP_STEAM_COUNT; j++){
+			int target_w = input_width;
+			int target_h = input_height;
+			if(j != 0){
+				vpp_get_sub_stream_resolution(input_width, input_height, &target_w, &target_h);
+			}
+			vpp_codec_ctx_t *p_vpp_codec_ctx = &vpp_box->vpp_codec_ctxs[j];
+			p_vpp_codec_ctx->vflow_chn = j;
+			vse_config->vse_ochn_attr[j].chn_en = CAM_TRUE; //缩小通道: 4K
+			vse_config->vse_ochn_attr[j].roi.x = 0;
+			vse_config->vse_ochn_attr[j].roi.y = 0;
+			vse_config->vse_ochn_attr[j].roi.w = input_width;
+			vse_config->vse_ochn_attr[j].roi.h = input_height;
+			vse_config->vse_ochn_attr[j].target_w = target_w;
+			vse_config->vse_ochn_attr[j].target_h = target_h;
+			vse_config->vse_ochn_attr[j].fmt = FRM_FMT_NV12;
+			vse_config->vse_ochn_attr[j].bit_width = 8;
+			if(VPP_STEAM_COUNT > 3 /*VSE输出可以大于1080P的通道：0 1 2*/){
+				SC_LOGE("vpp stream count max is 3, but %d", VPP_STEAM_COUNT);
+				exit(-1);
+			}
+			SC_LOGI("[%d] VSE channel %d: out_width: %d out_height: %d ",
+				i, j, target_w, target_h);
 
-		// 第一个通道给编码器使用
-		// 设置VSE通道0输出属性，ROI为原图大小，输出编码模块需要的图像
-		vse_config->vse_ochn_attr[0].chn_en = CAM_TRUE;
-		vse_config->vse_ochn_attr[0].roi.x = 0;
-		vse_config->vse_ochn_attr[0].roi.y = 0;
-		vse_config->vse_ochn_attr[0].roi.w = input_width;
-		vse_config->vse_ochn_attr[0].roi.h = input_height;
-		vse_config->vse_ochn_attr[0].target_w = cfg_box_vpp->encode_width;
-		vse_config->vse_ochn_attr[0].target_h = cfg_box_vpp->encode_height;
-		vse_config->vse_ochn_attr[0].fmt = FRM_FMT_NV12;
-		vse_config->vse_ochn_attr[0].bit_width = 8;
+		}
 
-		// 第二个通道的数据给BPU使用
+		// BPU 前处理
+		int32_t model_width = 512, model_height = 512;
 		if (strlen(vpp_box->m_bpu_handle.m_model_name) > 1 && strcmp(vpp_box->m_bpu_handle.m_model_name, "null") != 0) {
 			ret = bpu_wrap_get_model_hw(vpp_box->m_bpu_handle.m_model_name, &model_width, &model_height);
-			if (model_width > input_width || model_height > input_height)
-				vse_chn = 5;
-			else
-				vse_chn = 1;
-			vse_config->vse_ochn_attr[vse_chn].chn_en = CAM_TRUE;
-			vse_config->vse_ochn_attr[vse_chn].roi.x = 0;
-			vse_config->vse_ochn_attr[vse_chn].roi.y = 0;
-			vse_config->vse_ochn_attr[vse_chn].roi.w = input_width;
-			vse_config->vse_ochn_attr[vse_chn].roi.h = input_height;
-			vse_config->vse_ochn_attr[vse_chn].target_w = model_width;
-			vse_config->vse_ochn_attr[vse_chn].target_h = model_height;
-			vse_config->vse_ochn_attr[vse_chn].fmt = FRM_FMT_NV12;
-			vse_config->vse_ochn_attr[vse_chn].bit_width = 8;
+			if(ret != 0){
+				return -1;
+			}
 		}
+		// 无论BPU是否是能都要 使能对应的VSE通道: vse_send 的线程知道何时释放 vse 输入帧
+		if (model_width > input_width || model_height > input_height){
+			vse_chn = 5;
+		}else{
+			vse_chn = 4;
+		}				
+		vse_config->vse_ochn_attr[vse_chn].chn_en = CAM_TRUE;
+		vse_config->vse_ochn_attr[vse_chn].roi.x = 0;
+		vse_config->vse_ochn_attr[vse_chn].roi.y = 0;
+		vse_config->vse_ochn_attr[vse_chn].roi.w = input_width;
+		vse_config->vse_ochn_attr[vse_chn].roi.h = input_height;
+		vse_config->vse_ochn_attr[vse_chn].target_w = model_width;
+		vse_config->vse_ochn_attr[vse_chn].target_h = model_height;
+		vse_config->vse_ochn_attr[vse_chn].fmt = FRM_FMT_NV12;
+		vse_config->vse_ochn_attr[vse_chn].bit_width = 8;
+		vpp_box->m_vse_for_bpu_channel = vse_chn;	
 	}
 
 	return ret;
@@ -443,6 +470,33 @@ int32_t vpp_box_init_param(void)
 {
 	return vpp_box_init_param_full(&g_solution_config);
 }
+
+int32_t vpp_box_decode_param_get(solution_cfg_t* solution_cfg, solution_decode_param_info_t *solution_param_info){
+	solution_cfg_box_vpp_t *cfg_box_vpp = NULL;
+	solution_param_info->valid_count = 0;
+	for (int i = 0; i < solution_cfg->box_solution.pipeline_count; i++) {
+		cfg_box_vpp = &solution_cfg->box_solution.box_vpp[i];
+		solution_decode_param_single_t *param_single = &solution_param_info->params[solution_param_info->valid_count];
+		param_single->input_file = cfg_box_vpp->stream;
+		if(cfg_box_vpp->decode_type == MEDIA_CODEC_ID_H264){
+			param_single->codec_type = "h264";
+		}else if(cfg_box_vpp->decode_type == MEDIA_CODEC_ID_H265){
+			param_single->codec_type = "h265";
+		}else if(cfg_box_vpp->decode_type == MEDIA_CODEC_ID_JPEG){
+			param_single->codec_type = "jpeg";
+		}else{
+			SC_LOGI("%d recv unsupport codec type %d, so exit.", cfg_box_vpp->decode_type);
+			exit(-1);
+		}
+
+		solution_param_info->valid_count++;
+
+		SC_LOGI("vpp_box_decode_param_get [%d] input file %s, codec type is %s",
+			solution_param_info->valid_count, param_single->input_file, param_single->codec_type);
+	}
+	return 0;
+}
+
 
 int32_t vpp_box_ion_param_get(solution_cfg_t* solution_cfg, solution_ion_param_info_t *solution_param_info){
 	return 0;
@@ -477,7 +531,6 @@ int32_t vpp_box_init(void)
 	hb_mem_module_open();
 
 	for (i = 0; i < VPP_BOX_MAX_CHANNELS; i++) {
-		g_vpp_box[i].venc_shm = NULL;
 		if (strlen(g_vpp_box[i].m_stream_path) == 0)
 			continue;
 
@@ -492,23 +545,21 @@ int32_t vpp_box_init(void)
 			SC_LOGE("vp_vflow_init failed");
 			return -1;
 		}
-
-		// 初始化编码器
-		if (g_vpp_box[i].m_encode_context.codec_id != MEDIA_CODEC_ID_NONE) {
-			ret = vp_codec_init(&g_vpp_box[i].m_encode_context);
-			if (ret != 0)
-			{
+		
+		//初始化编码器
+		for(int j = 0; j< VPP_STEAM_COUNT; j++){
+			vpp_codec_ctx_t *p_vpp_codec_ctx = &g_vpp_box[i].vpp_codec_ctxs[j];
+			ret = vp_codec_init(&p_vpp_codec_ctx->m_encode_context);
+			if (ret != 0){
 				SC_LOGE("Encode vp_codec_init error(%d)", i);
 				return -1;
 			}
-			SC_LOGI("Init video encode instance %d successful", g_vpp_box[i].m_encode_context.instance_index);
 		}
 
 		// 初始化解码器
 		if (g_vpp_box[i].m_decode_context.codec_id != MEDIA_CODEC_ID_NONE) {
 			ret = vp_codec_init(&g_vpp_box[i].m_decode_context);
-			if (ret != 0)
-			{
+			if (ret != 0){
 				SC_LOGE("Decode vp_codec_init error(%d)", i);
 				return -1;
 			}
@@ -516,16 +567,16 @@ int32_t vpp_box_init(void)
 		}
 
 		// 初始化算法模块，初始化bpu
-		if (strlen(g_vpp_box[i].m_bpu_handle.m_model_name) == 0)
-			continue;
-		ret = bpu_wrap_model_init(&g_vpp_box[i].m_bpu_handle, g_vpp_box[i].m_bpu_handle.m_model_name);
-		if (ret != 0) {
-			SC_LOGE("bpu_wrap_model_init failed");
-			return -1;
+		if (strlen(g_vpp_box[i].m_bpu_handle.m_model_name) != 0){
+			ret = bpu_wrap_model_init(&g_vpp_box[i].m_bpu_handle, g_vpp_box[i].m_bpu_handle.m_model_name);
+			if (ret != 0) {
+				SC_LOGE("bpu_wrap_model_init failed");
+				return -1;
+			}
+			// 注册算法结果回调函数
+			bpu_wrap_callback_register(&g_vpp_box[i].m_bpu_handle,
+				bpu_wrap_general_result_handle, &g_vpp_box[i].m_bpu_handle.m_vpp_id);
 		}
-		// 注册算法结果回调函数
-		bpu_wrap_callback_register(&g_vpp_box[i].m_bpu_handle,
-			bpu_wrap_general_result_handle, &g_vpp_box[i].m_bpu_handle.m_vpp_id);
 	}
 
 	return 0;
@@ -543,40 +594,22 @@ int32_t vpp_box_uninit(void)
 		vp_vflow_contex = &g_vpp_box[i].vp_vflow_contex;
 		ret = vp_vflow_deinit(vp_vflow_contex);
 		ret |= vp_vse_deinit(vp_vflow_contex);
-
+		for(int j = 0; j< VPP_STEAM_COUNT; j++){
+			vpp_codec_ctx_t *p_vpp_codec_ctx = &g_vpp_box[i].vpp_codec_ctxs[j];
+			ret |= vp_codec_deinit(&p_vpp_codec_ctx->m_encode_context);
+		}
+		ret |= vp_codec_deinit(&g_vpp_box[i].m_decode_context);
 		SC_ERR_CON_EQ(ret, 0, "vp_vse_deinit or vp_vflow_deinit failed");
 
-		if (g_vpp_box[i].m_encode_context.codec_id != MEDIA_CODEC_ID_NONE) {
-			ret = vp_codec_deinit(&g_vpp_box[i].m_encode_context);
-			if (ret != 0)
-			{
-				SC_LOGE("Encode vp_codec_deinit error(%d)", i);
+		if (strlen(g_vpp_box[i].m_bpu_handle.m_model_name) != 0){
+			ret = bpu_wrap_deinit(&g_vpp_box[i].m_bpu_handle);
+			if (ret != 0) {
+				SC_LOGE("bpu_wrap_model_init failed");
 				return -1;
 			}
-			SC_LOGI("Deinit video encode instance %d successful", g_vpp_box[i].m_encode_context.instance_index);
-		}
-
-		if (g_vpp_box[i].m_decode_context.codec_id != MEDIA_CODEC_ID_NONE) {
-			ret = vp_codec_deinit(&g_vpp_box[i].m_decode_context);
-			if (ret != 0)
-			{
-				SC_LOGE("Decode vp_codec_deinit error(%d)", i);
-				return -1;
-			}
-			SC_LOGI("Deinit video decode instance %d successful", g_vpp_box[i].m_decode_context.instance_index);
-		}
-
-		if (strlen(g_vpp_box[i].m_bpu_handle.m_model_name) == 0)
-			continue;
-		ret = bpu_wrap_deinit(&g_vpp_box[i].m_bpu_handle);
-		if (ret != 0) {
-			SC_LOGE("bpu_wrap_model_init failed");
-			return -1;
-		}
+		}	
 	}
-
 	hb_mem_module_close();
-
 	vp_print_debug_infos();
 	return 0;
 }
@@ -589,77 +622,68 @@ int32_t vpp_box_start(void)
 	for (i = 0; i < VPP_BOX_MAX_CHANNELS; i++) {
 		if (strlen(g_vpp_box[i].m_stream_path) == 0)
 			continue;
+
 		g_vpp_box[i].pipline_id = i;
 		vp_vflow_contex = &g_vpp_box[i].vp_vflow_contex;
+		///////////////////////////////////////////////
 		ret = vp_vse_start(vp_vflow_contex);
 		ret |= vp_vflow_start(vp_vflow_contex);
+		for(int j = 0; j< VPP_STEAM_COUNT; j++){
+			vpp_codec_ctx_t *p_vpp_codec_ctx = &g_vpp_box[i].vpp_codec_ctxs[j];
+			ret |= vp_codec_start(&p_vpp_codec_ctx->m_encode_context);
+		}
+		ret |= vp_codec_start(&g_vpp_box[i].m_decode_context);
 		SC_ERR_CON_EQ(ret, 0, "vp_vse_start or vp_vflow_start failed");
+		
+		//流媒体
+		char meida_name[64];
+		sprintf(meida_name, "ch%d", i);
+		for(int j = 0; j< VPP_STEAM_COUNT; j++){
+			vpp_codec_ctx_t *p_vpp_codec_ctx = &g_vpp_box[i].vpp_codec_ctxs[j];
+			p_vpp_codec_ctx->media_type = vp_codec_get_codec_type_string(p_vpp_codec_ctx->m_encode_context.codec_id);
+			if(j == 0){
+				sprintf(p_vpp_codec_ctx->stream_name, "main");
+			}else{
+				sprintf(p_vpp_codec_ctx->stream_name, "sub%d", j);
+			}
 
-		if(g_vpp_box[i].venc_shm == NULL) {
-			T_SDK_VENC_INFO venc_chn_info;
+			T_SDK_MEDIA_SRV_CREATE_PARAM create_param = {
+				.media_name = meida_name,
+				.stream_name = p_vpp_codec_ctx->stream_name,
+				.codec_type_name = p_vpp_codec_ctx->media_type,
+				.media = NULL,
+			};
 
-			media_codec_context_t *codec_context = &g_vpp_box[i].m_encode_context;
-			media_codec_id_t codec_type = codec_context->codec_id;
+			SDK_Cmd_Impl(SDK_CMD_MEDIA_SERVER_CREATE, &create_param);
+		 		p_vpp_codec_ctx->media_handler = create_param.media;
+		}
+		
+		///////////////////////////////////////////////
+		// 线程: 文件读取并送入解码器
+		SC_LOGI("Start video decode instance %d successful", g_vpp_box[i].m_decode_context.instance_index);
+		g_vpp_box[i].m_decode_param.context = &g_vpp_box[i].m_decode_context;
+		strcpy(g_vpp_box[i].m_decode_param.stream_path, g_vpp_box[i].m_stream_path);
+		g_vpp_box[i].m_vdec_thread.pvThreadData = (void*)&g_vpp_box[i].m_decode_param;
+		mThreadStart(vp_decode_work_func, &g_vpp_box[i].m_vdec_thread, E_THREAD_JOINABLE);
 
-			venc_chn_info.channel = i;
-			ret = SDK_Cmd_Impl(SDK_CMD_VPP_VENC_CHN_PARAM_GET, (void*)&venc_chn_info);
+		// 线程：读取解码器 送入VSE
+		g_vpp_box[i].m_vflow_thread.pvThreadData = (void*)&g_vpp_box[i];
+		mThreadStart(get_decode_and_vse_process_thread_func, &g_vpp_box[i].m_vflow_thread, E_THREAD_JOINABLE);
 
-			char shm_id[32] = {0}, shm_name[32] = {0};
-			sprintf(shm_id, "cam_id_%s_chn%d", codec_type == MEDIA_CODEC_ID_H264 ? "h264" :
-					(codec_type == MEDIA_CODEC_ID_H265 ? "h265" :
-					(codec_type == MEDIA_CODEC_ID_JPEG) ? "jpeg" : "other"), i);
-			sprintf(shm_name, "name_%s_chn%d", codec_type == MEDIA_CODEC_ID_H264 ? "h264" :
-					(codec_type == MEDIA_CODEC_ID_H265 ? "h265" :
-					(codec_type == MEDIA_CODEC_ID_JPEG) ? "jpeg" : "other"), i);
-			g_vpp_box[i].venc_shm = shm_stream_create(shm_id, shm_name,
-					STREAM_MAX_USER, venc_chn_info.suggest_buffer_item_count,
-					venc_chn_info.suggest_buffer_region_size,
-					SHM_STREAM_WRITE, SHM_STREAM_MALLOC);
-
-			SC_LOGI("video_stream_create => shm_id: %s, shm_name: %s, max user: %d, framerate: %d, stream_buf_size: %d bitrate:%d region size:%d, item count %d.",
-				shm_id, shm_name, STREAM_MAX_USER,
-				venc_chn_info.framerate, venc_chn_info.stream_buf_size, venc_chn_info.bitrate,
-				venc_chn_info.suggest_buffer_region_size, venc_chn_info.suggest_buffer_item_count);
-		}else{
-			SC_LOGE("channel %d's venc_shm is not null, exit(-1)", i);
-			exit(-1);
+		// 线程: 读取VSE 送入编码器
+		for(int j = 0; j< VPP_STEAM_COUNT; j++){
+			vpp_codec_ctx_t *p_vpp_codec_ctx = &g_vpp_box[i].vpp_codec_ctxs[j];
+			p_vpp_codec_ctx->m_venc_thread.pvThreadData = (void*)p_vpp_codec_ctx;
+			mThreadStart(get_vse_and_codec_process_thread_func, &p_vpp_codec_ctx->m_venc_thread, E_THREAD_JOINABLE);
 		}
 
-
-		if (g_vpp_box[i].m_encode_context.codec_id != MEDIA_CODEC_ID_NONE) {
-			ret = vp_codec_start(&g_vpp_box[i].m_encode_context);
-			if (ret != 0)
-			{
-				SC_LOGE("Encode vp_codec_start error(%d)", i);
+		if (strlen(g_vpp_box[i].m_bpu_handle.m_model_name) != 0){
+			ret = bpu_wrap_start(&g_vpp_box[i].m_bpu_handle);
+			if (ret != 0) {
+				SC_LOGE("bpu_wrap_start failed");
 				return -1;
 			}
-			SC_LOGI("Start video encode instance %d successful", g_vpp_box[i].m_encode_context.instance_index);
-
-			g_vpp_box[i].m_venc_thread.pvThreadData = (void *)&g_vpp_box[i];
-			mThreadStart(get_decode_output_thread, &g_vpp_box[i].m_venc_thread, E_THREAD_JOINABLE);
-		}
-
-		// 启动解码线程
-		if (g_vpp_box[i].m_decode_context.codec_id != MEDIA_CODEC_ID_NONE) {
-			ret = vp_codec_start(&g_vpp_box[i].m_decode_context);
-			if (ret != 0)
-			{
-				SC_LOGE("Decode vp_codec_start error(%d)", i);
-					return -1;
-			}
-			SC_LOGI("Start video decode instance %d successful", g_vpp_box[i].m_decode_context.instance_index);
-			g_vpp_box[i].m_decode_param.context = &g_vpp_box[i].m_decode_context;
-			strcpy(g_vpp_box[i].m_decode_param.stream_path, g_vpp_box[i].m_stream_path);
-			g_vpp_box[i].m_vdec_thread.pvThreadData = (void*)&g_vpp_box[i].m_decode_param;
-			mThreadStart(vp_decode_work_func, &g_vpp_box[i].m_vdec_thread, E_THREAD_JOINABLE);
-		}
-
-		if (strlen(g_vpp_box[i].m_bpu_handle.m_model_name) == 0)
-			continue;
-		ret = bpu_wrap_start(&g_vpp_box[i].m_bpu_handle);
-		if (ret != 0) {
-			SC_LOGE("bpu_wrap_start failed");
-			return -1;
+			SC_LOGI("Start BPU %d process successful, %s", i, g_vpp_box[i].m_bpu_handle.m_model_name);	
 		}
 	}
 
@@ -675,7 +699,7 @@ static int32_t get_pipeline_id_by_video_id(int32_t video_id)
 	// 用 enable_pipeline_count 记录使能的pipeline的编号，这个编号理论上与 web 上的video编号相等
 	// 当 enable_pipeline_count == video_id时就说明找到了对应的pipeline
 	for (i = 0; i < VPP_BOX_MAX_CHANNELS; i++) {
-		if (g_vpp_box[i].m_encode_context.codec_id != MEDIA_CODEC_ID_NONE) {
+		if (g_vpp_box[i].vpp_codec_ctxs[0].m_encode_context.codec_id != MEDIA_CODEC_ID_NONE) {
 			enable_pipeline_count++;
 			if (enable_pipeline_count == video_id) {
 				return i;
@@ -694,32 +718,28 @@ int32_t vpp_box_stop(void)
 	for (i = 0; i < VPP_BOX_MAX_CHANNELS; i++) {
 		if (strlen(g_vpp_box[i].m_stream_path) == 0)
 			continue;
-		if (g_vpp_box[i].m_encode_context.codec_id != MEDIA_CODEC_ID_NONE) {
-			// 结束编码线程
-			mThreadStop(&g_vpp_box[i].m_venc_thread);
-		}
-		if (g_vpp_box[i].m_decode_context.codec_id != MEDIA_CODEC_ID_NONE) {
-			mThreadStop(&g_vpp_box[i].m_vdec_thread);
-		}
 
-		if(g_vpp_box[i].venc_shm != NULL){
-			shm_stream_destory(g_vpp_box[i].venc_shm);
-			g_vpp_box[i].venc_shm = NULL;
+		// 线程: 读取VSE 送入编码器
+		for(int j = 0; j< VPP_STEAM_COUNT; j++){
+			vpp_codec_ctx_t *p_vpp_codec_ctx = &g_vpp_box[i].vpp_codec_ctxs[j];
+			p_vpp_codec_ctx->m_venc_thread.pvThreadData = (void*)p_vpp_codec_ctx;
+			mThreadStop(&p_vpp_codec_ctx->m_venc_thread);
 		}
+		mThreadStop(&g_vpp_box[i].m_vflow_thread);
+		mThreadStop(&g_vpp_box[i].m_vdec_thread);
 	}
 
 	for (i = 0; i < VPP_BOX_MAX_CHANNELS; i++) {
 		if (strlen(g_vpp_box[i].m_stream_path) == 0)
 			continue;
-
-		if (g_vpp_box[i].m_encode_context.codec_id != MEDIA_CODEC_ID_NONE) {
-			ret = vp_codec_stop(&g_vpp_box[i].m_encode_context);
-			if (ret != 0)
-			{
+		
+		for(int j = 0; j< VPP_STEAM_COUNT; j++){
+			vpp_codec_ctx_t *p_vpp_codec_ctx = &g_vpp_box[i].vpp_codec_ctxs[j];
+			ret = vp_codec_stop(&p_vpp_codec_ctx->m_encode_context);
+			if (ret != 0){
 				SC_LOGE("Encode vp_codec_stop error(%d)", i);
 				return -1;
 			}
-			SC_LOGI("Stop video encode instance %d successful", g_vpp_box[i].m_encode_context.instance_index);
 		}
 
 		if (g_vpp_box[i].m_decode_context.codec_id != MEDIA_CODEC_ID_NONE) {
@@ -737,9 +757,16 @@ int32_t vpp_box_stop(void)
 		ret |= vp_vse_stop(vp_vflow_contex);
 		SC_ERR_CON_EQ(ret, 0, "vp_vflow_stop or vp_vse_stop failed");
 
+		for(int j = 0; j< VPP_STEAM_COUNT; j++){
+			vpp_codec_ctx_t *p_vpp_codec_ctx = &g_vpp_box[i].vpp_codec_ctxs[j];
+			SDK_Cmd_Impl(SDK_CMD_MEDIA_SERVER_DESTROY, p_vpp_codec_ctx->media_handler);
+			p_vpp_codec_ctx->media_handler = NULL;
+			p_vpp_codec_ctx->media_type = NULL;
+		}
+
 		if (strlen(g_vpp_box[i].m_bpu_handle.m_model_name) == 0)
 			continue;
-		// mThreadStop(&g_vpp_box[i].m_bpu_thread);
+
 		ret = bpu_wrap_stop(&g_vpp_box[i].m_bpu_handle);
 		if (ret != 0) {
 			SC_LOGE("bpu_wrap_start failed");
@@ -783,32 +810,33 @@ int32_t vpp_box_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 				SC_LOGE("box solutions max channel is %d, but get channel index is %d .", VPP_BOX_MAX_CHANNELS, i);
 				return -1;
 			}
-			if(g_vpp_box[param->channel].m_encode_context.codec_id == MEDIA_CODEC_ID_NONE){
+			vpp_codec_ctx_t *p_vpp_codec_ctx = &g_vpp_box[param->channel].vpp_codec_ctxs[0];
+			if(p_vpp_codec_ctx->m_encode_context.codec_id == MEDIA_CODEC_ID_NONE){
 				SC_LOGE("box solutions channel %d is not enable, can't get encode param .", param->channel);
 				return -1;
 			}
-
-			enc_params = &g_vpp_box[param->channel].m_encode_context.video_enc_params;
+			
+			enc_params = &p_vpp_codec_ctx->m_encode_context.video_enc_params;
 			param->enable = 1;
 			param->width = enc_params->width;
 			param->height = enc_params->height;
 			param->stream_buf_size = enc_params->bitstream_buf_size;
-			if (g_vpp_box[param->channel].m_encode_context.codec_id == MEDIA_CODEC_ID_H264) {
+			if (p_vpp_codec_ctx->m_encode_context.codec_id == MEDIA_CODEC_ID_H264) {
 				param->type = 96;
 				param->bitrate = enc_params->rc_params.h264_cbr_params.bit_rate;
 				param->framerate = enc_params->rc_params.h264_cbr_params.frame_rate;
-			} else if (g_vpp_box[param->channel].m_encode_context.codec_id == MEDIA_CODEC_ID_H265) {
+			} else if (p_vpp_codec_ctx->m_encode_context.codec_id == MEDIA_CODEC_ID_H265) {
 				param->type = 265;
 				param->bitrate = enc_params->rc_params.h265_cbr_params.bit_rate;
 				param->framerate = enc_params->rc_params.h265_cbr_params.frame_rate;
 			} else {
-				SC_LOGE("unsupport codec_id %d, so exit.", g_vpp_box[param->channel].m_encode_context.codec_id);
+				SC_LOGE("unsupport codec_id %d, so exit.", p_vpp_codec_ctx->m_encode_context.codec_id);
 				exit(-1);
 			}
 			vp_codec_get_user_buffer_param(enc_params, &param->suggest_buffer_region_size,
 					&param->suggest_buffer_item_count);
-			SC_LOGI("Codec_id: %d", g_vpp_box[param->channel].m_encode_context.codec_id);
-			SC_LOGI("Instance Index: %d", g_vpp_box[param->channel].m_encode_context.instance_index);
+			SC_LOGI("Codec_id: %d", p_vpp_codec_ctx->m_encode_context.codec_id);
+			SC_LOGI("Instance Index: %d", p_vpp_codec_ctx->m_encode_context.instance_index);
 			SC_LOGI("Param Channel: %d", param->channel);
 			SC_LOGI("Param Enable: %d", param->enable);
 			SC_LOGI("Param Width: %d", param->width);
@@ -827,7 +855,8 @@ int32_t vpp_box_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 			*status = 0;
 			int valid_index = 0;
 			for (i = 0; i < VPP_BOX_MAX_CHANNELS; i++) {
-				if (g_vpp_box[i].m_encode_context.codec_id != MEDIA_CODEC_ID_NONE) {
+				vpp_codec_ctx_t *p_vpp_codec_ctx = &g_vpp_box[i].vpp_codec_ctxs[0];
+				if (p_vpp_codec_ctx->m_encode_context.codec_id != MEDIA_CODEC_ID_NONE) {
 					*status |= (1 << valid_index);
 					valid_index++;
 				}
@@ -845,6 +874,7 @@ int32_t vpp_box_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 				SC_LOGE("vp_allocate_image_frame failed");
 				return -1;
 			}
+
 			ret = vp_vse_get_frame(&g_vpp_box[pipeline_id].vp_vflow_contex, 0, &image_frame);
 			if (ret != 0) {
 				SC_LOGE("vp_vse_get_frame failed (%d)", ret);

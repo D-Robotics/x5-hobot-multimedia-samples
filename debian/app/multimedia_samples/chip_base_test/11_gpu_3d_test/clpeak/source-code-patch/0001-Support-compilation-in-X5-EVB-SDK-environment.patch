@@ -1,0 +1,142 @@
+From a2932924244780e6df001c067b48a31d548ebbed Mon Sep 17 00:00:00 2001
+From: "chengyu.he" <chengyu.he@horizon.cc>
+Date: Wed, 12 Feb 2025 10:41:32 +0800
+Subject: [PATCH] Support compilation in X5 EVB SDK environment
+
+Signed-off-by: chengyu.he <chengyu.he@horizon.cc>
+---
+ CMakeLists.txt                | 57 ++++++++++++++++++++---------------
+ Readme.md                     | 11 +++++++
+ cmake/aarch64_toolchain.cmake | 12 ++++++++
+ 3 files changed, 56 insertions(+), 24 deletions(-)
+ create mode 100644 Readme.md
+ create mode 100644 cmake/aarch64_toolchain.cmake
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 7765f89..bfbc026 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -9,31 +9,39 @@ if (NOT CMAKE_BUILD_TYPE)
+   set(CMAKE_BUILD_TYPE "Release")
+ endif()
+ 
+-find_package(OpenCL)
+-FIND_PATH(HPP_FOUND CL/opencl.hpp PATHS ${OpenCL_INCLUDE_DIRS})
+-if(NOT OpenCL_FOUND OR NOT HPP_FOUND)
+-  list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+-  include(BuildSdk)
++# find_package(OpenCL)
++# FIND_PATH(HPP_FOUND CL/opencl.hpp PATHS ${OpenCL_INCLUDE_DIRS})
++# if(NOT OpenCL_FOUND OR NOT HPP_FOUND)
++#   list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
++#   include(BuildSdk)
+ 
+-  find_package(OpenCL REQUIRED)
++#   find_package(OpenCL REQUIRED)
+ 
+-  set(OpenCL_INCLUDE_DIRS ${OpenCL_INCLUDE_DIRS} "${SDK_ROOT}/include")
+-  FIND_PATH(HPP_FOUND CL/opencl.hpp PATHS ${OpenCL_INCLUDE_DIRS} REQUIRED)
+-endif()
+-
+-if(NOT OpenCL_FOUND)
+-  message(FATAL_ERROR "Could not find OpenCL include/libs. Set OCL_ROOT to your OpenCL SDK")
+-else()
+-  message(STATUS "Selected OpenCL includes from ${OpenCL_INCLUDE_DIRS}")
+-  message(STATUS "Selected OpenCL lib ${OpenCL_LIBRARIES}")
+-endif()
++#   set(OpenCL_INCLUDE_DIRS ${OpenCL_INCLUDE_DIRS} "${SDK_ROOT}/include")
++#   FIND_PATH(HPP_FOUND CL/opencl.hpp PATHS ${OpenCL_INCLUDE_DIRS} REQUIRED)
++# endif()
+ 
++# if(NOT OpenCL_FOUND)
++#   message(FATAL_ERROR "Could not find OpenCL include/libs. Set OCL_ROOT to your OpenCL SDK")
++# else()
++#   message(STATUS "Selected OpenCL includes from ${OpenCL_INCLUDE_DIRS}")
++#   message(STATUS "Selected OpenCL lib ${OpenCL_LIBRARIES}")
++# endif()
+ # extra libs for static library
+-if(UNIX AND ${OpenCL_LIBRARIES} MATCHES "libOpenCL.a")
+-  set(OpenCL_LIBRARIES ${OpenCL_LIBRARIES} pthread dl)
+-elseif(WIN32 AND ${OpenCL_LIBRARIES} MATCHES "OpenCL.lib")
+-  set(OpenCL_LIBRARIES ${OpenCL_LIBRARIES} cfgmgr32.lib runtimeobject.lib)
+-endif()
++# if(UNIX AND ${OpenCL_LIBRARIES} MATCHES "libOpenCL.a")
++#   set(OpenCL_LIBRARIES ${OpenCL_LIBRARIES} pthread dl)
++# elseif(WIN32 AND ${OpenCL_LIBRARIES} MATCHES "OpenCL.lib")
++#   set(OpenCL_LIBRARIES ${OpenCL_LIBRARIES} cfgmgr32.lib runtimeobject.lib)
++# endif()
++
++set(OpenCL_INCLUDE_DIRS ${SDK_PATH}/build/hbre_deps/include/)
++set(OpenCL_LIBRARIES OpenCL m GAL CLC EGL GLESv2 SPIRV_viv CLC VSC gbm gbm_viv drm)
++set(OpenCL_LIBRARIE_DIRS ${SDK_PATH}/deploy/hbre/lib/
++						${SDK_PATH}/build/hbre_deps/usr/lib/
++						${SDK_PATH}/deploy/system/usr/lib/)
++
++message(STATUS "OpenCL_INCLUDE_DIRS: ${OpenCL_INCLUDE_DIRS}")
++message(STATUS "OpenCL_LIBRARIE_DIRS: ${OpenCL_LIBRARIE_DIRS}")
+ 
+ set(CMAKE_CXX_STANDARD "11")
+ set(CMAKE_CXX_STANDARD_REQUIRED ON)
+@@ -55,9 +63,9 @@ set(CLPEAK_SOURCE_FILES
+     src/kernel_latency.cpp
+     src/entry.cpp
+ )
+-
+ add_executable(clpeak ${CLPEAK_SOURCE_FILES})
+ target_link_libraries(clpeak ${OpenCL_LIBRARIES})
++target_link_directories(clpeak PRIVATE ${OpenCL_LIBRARIE_DIRS})
+ target_include_directories(clpeak PRIVATE ${OpenCL_INCLUDE_DIRS} "include" "src/kernels")
+ target_compile_definitions(clpeak PRIVATE CL_TARGET_OPENCL_VERSION=120)
+ 
+@@ -67,8 +75,9 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
+   target_compile_options(clpeak PRIVATE -fPIC -Wall -Wextra -Wno-unused-parameter)
+ endif()
+ 
+-install(TARGETS clpeak RUNTIME DESTINATION bin)
+-install(FILES LICENSE DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/clpeak")
++install(TARGETS clpeak RUNTIME DESTINATION "${X5_3DGPU_OPENCL_TEST_PATH}/clpeak/")
++# install(FILES Readme.md DESTINATION "${X5_3DGPU_OPENCL_TEST_PATH}/clpeak")
++# install(FILES 0001-Support-compilation-in-X5-EVB-SDK-environment.patch DESTINATION "${X5_3DGPU_OPENCL_TEST_PATH}/clpeak")
+ 
+ enable_testing()
+ add_test(clpeak_test_run clpeak)
+diff --git a/Readme.md b/Readme.md
+new file mode 100644
+index 0000000..fecbf49
+--- /dev/null
++++ b/Readme.md
+@@ -0,0 +1,11 @@
++# 获取源码
++clpeak是开源代码，放到EVB SDK中无法直接编译，需要按照如下步骤操作打上PATCH。
++
++1. 进入上级目录，创建source
++	cd ../ && mkdir source
++2. 拉取代码（指定tag）
++	cd clpeak
++	git clone --branch 1.1.4 --depth 1 https://github.com/krrishnarraj/clpeak.git
++3. patch 文件赋值到源码目录
++   cp ../../0001-Support-compilation-in-X5-EVB-SDK-environment.patch .
++   git am < 0001-Support-compilation-in-X5-EVB-SDK-environment.patch
+\ No newline at end of file
+diff --git a/cmake/aarch64_toolchain.cmake b/cmake/aarch64_toolchain.cmake
+new file mode 100644
+index 0000000..256d4c8
+--- /dev/null
++++ b/cmake/aarch64_toolchain.cmake
+@@ -0,0 +1,12 @@
++set(CMAKE_SYSTEM_NAME Linux)
++set(CMAKE_SYSTEM_PROCESSOR arm)
++
++# 指定交叉编译器路径
++set(CMAKE_C_COMPILER /opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-gcc)
++set(CMAKE_CXX_COMPILER /opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-g++)
++
++add_compile_options(-Wno-missing-field-initializers)
++
++set(SDK_PATH ${CMAKE_CURRENT_LIST_DIR}/../../../../../../../../out/)
++
++set(X5_3DGPU_OPENCL_TEST_PATH ${CMAKE_CURRENT_LIST_DIR}/../../../)
+\ No newline at end of file
+-- 
+2.34.1
+

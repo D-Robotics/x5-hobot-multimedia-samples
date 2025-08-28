@@ -70,6 +70,13 @@ static vin_ochn_attr_t vin_ochn_attr = {
 	},
 };
 
+static vin_attr_ex_t vin_attr_ex = {
+	.vin_attr_ex_mask = 0x00,
+	.mclk_ex_attr = {
+		.mclk_freq = 0,
+	},
+};
+
 static isp_attr_t isp_attr = {
 	.input_mode = 2, // 0: online, 1: mcm, 类似offline, 2: Offline
 	.sensor_mode= ISP_NORMAL_M,
@@ -100,6 +107,7 @@ vp_sensor_config_t dummy_sensor_config = {
 	.camera_config = &camera_config,
 	.vin_ichn_attr = &vin_ichn_attr,
 	.vin_node_attr = &vin_node_attr,
+	.vin_attr_ex   = &vin_attr_ex,
 	.vin_ochn_attr = &vin_ochn_attr,
 	.isp_attr      = &isp_attr,
 	.isp_ichn_attr = &isp_ichn_attr,

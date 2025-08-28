@@ -1,8 +1,8 @@
 #ifndef _SOLUTION_CHECK_H_
 #define _SOLUTION_CHECK_H_
 #include "vp_ion.h"
+#include "solution_struct_define.h"
 
-#define SOLUTION_MAX_PIPELINE_COUNT (32)
 typedef struct {
 	int pipeline_param_vaild_count;
 	vp_ion_pipeline_fixed_param_t extern_param;
@@ -34,4 +34,19 @@ typedef struct{
 	vp_codec_usr_param_single_t params[SOLUTION_MAX_PIPELINE_COUNT];
 }solution_vpu_param_info_t;
 float solution_check_vpu_is_enough(solution_vpu_param_info_t *solution_param_info);
+
+
+// Decode 类型匹配检查
+typedef struct {
+	const char *input_file;
+	const char* codec_type;
+}solution_decode_param_single_t;
+
+typedef struct {
+	int valid_count;
+	solution_decode_param_single_t params[SOLUTION_MAX_PIPELINE_COUNT];
+}solution_decode_param_info_t;
+
+void solution_check_decode_param_is_match(solution_decode_param_info_t* decode_param,
+	solution_decode_param_check_info_t *check_result);
 #endif

@@ -1,0 +1,156 @@
+From 6392d5db3f2f1a0e7dd61a40778c48e6fd779278 Mon Sep 17 00:00:00 2001
+From: "chengyu.he" <chengyu.he@horizon.cc>
+Date: Tue, 11 Feb 2025 17:21:58 +0800
+Subject: [PATCH 2/3] Support configuring displays through input parameters
+
+Signed-off-by: chengyu.he <chengyu.he@horizon.cc>
+---
+ src/native-state-drm.cpp | 54 +++++++++++++++++++++++++++++++++++++---
+ src/options.cpp          | 13 ++++++++--
+ src/options.h            |  1 +
+ 3 files changed, 62 insertions(+), 6 deletions(-)
+
+diff --git a/src/native-state-drm.cpp b/src/native-state-drm.cpp
+index e4bfab5..f72a090 100644
+--- a/src/native-state-drm.cpp
++++ b/src/native-state-drm.cpp
+@@ -547,6 +547,41 @@ NativeStateDRM::init_gbm()
+ 
+     return true;
+ }
++typedef struct connector_type_name_s {
++    unsigned int type;
++    const char *name;
++}connector_type_name_t;
++
++static const connector_type_name_t connector_type_names[] = {
++    { DRM_MODE_CONNECTOR_Unknown, "unknown" },
++    { DRM_MODE_CONNECTOR_VGA, "VGA" },
++    { DRM_MODE_CONNECTOR_DVII, "DVI-I" },
++    { DRM_MODE_CONNECTOR_DVID, "DVI-D" },
++    { DRM_MODE_CONNECTOR_DVIA, "DVI-A" },
++    { DRM_MODE_CONNECTOR_Composite, "composite" },
++    { DRM_MODE_CONNECTOR_SVIDEO, "s-video" },
++    { DRM_MODE_CONNECTOR_LVDS, "LVDS" },
++    { DRM_MODE_CONNECTOR_Component, "component" },
++    { DRM_MODE_CONNECTOR_9PinDIN, "9-pin DIN" },
++    { DRM_MODE_CONNECTOR_DisplayPort, "DP" },
++    { DRM_MODE_CONNECTOR_HDMIA, "HDMI-A" },
++    { DRM_MODE_CONNECTOR_HDMIB, "HDMI-B" },
++    { DRM_MODE_CONNECTOR_TV, "TV" },
++    { DRM_MODE_CONNECTOR_eDP, "eDP" },
++    { DRM_MODE_CONNECTOR_VIRTUAL, "Virtual" },
++    { DRM_MODE_CONNECTOR_DSI, "DSI" },
++    { DRM_MODE_CONNECTOR_DPI, "DPI" },
++};
++static const char *util_lookup_connector_type_name(unsigned int type)
++{
++	unsigned int count = sizeof(connector_type_names)/sizeof(connector_type_names[0]);
++    for (unsigned int i = 0; i < count; i++)
++        if (connector_type_names[i].type == type)
++            return connector_type_names[i].name;
++
++    return NULL;
++}
++
+ void print_drmModeConnector(const drmModeConnector *conn) {
+     if (!conn) {
+         printf("无效的连接器指针\n");
+@@ -621,13 +656,24 @@ NativeStateDRM::init()
+     }
+ 
+     // Find a connected connector
++	drmModeConnector* connector_tmp = NULL;
+     for (int c = 0; c < resources_->count_connectors; c++) {
+-        connector_ = drmModeGetConnector(fd, resources_->connectors[c]);
+-        if (DRM_MODE_CONNECTED == connector_->connection) {
++        connector_tmp = drmModeGetConnector(fd, resources_->connectors[c]);
++
++		const char *connector_name = util_lookup_connector_type_name(connector_tmp->connector_type);
++		if(strcmp(connector_name, "HDMI-A") == 0){
++			connector_name = "HDMI";
++		}
++		// printf("type is %d, name is [%s]\n", connector_tmp->connector_type, connector_name);
++		if (strcmp(connector_name, Options::display_connector.c_str()) != 0) {
++			 drmModeFreeConnector(connector_tmp);
++			 connector_tmp = 0;
++			continue;
++		}
++		if (DRM_MODE_CONNECTED == connector_tmp->connection) {
++			connector_ = connector_tmp;
+             break;
+         }
+-        drmModeFreeConnector(connector_);
+-        connector_ = 0;
+     }
+ 
+     if (!connector_) {
+diff --git a/src/options.cpp b/src/options.cpp
+index 17ab267..b7546fb 100644
+--- a/src/options.cpp
++++ b/src/options.cpp
+@@ -50,6 +50,7 @@ Options::Results Options::results = Options::ResultsFps;
+ std::string Options::results_file;
+ std::vector<Options::WindowSystemOption> Options::winsys_options;
+ std::string Options::winsys_options_help;
++std::string Options::display_connector = "HDMI";
+ 
+ static struct option long_options[] = {
+     {"annotate", 0, 0, 0},
+@@ -108,7 +109,7 @@ parse_size(const std::string &str, std::pair<int,int> &size)
+  *
+  * @return the parsed frame end method
+  */
+-static Options::FrameEnd 
++static Options::FrameEnd
+ frame_end_from_str(const std::string &str)
+ {
+     Options::FrameEnd m = Options::FrameEndDefault;
+@@ -197,6 +198,7 @@ Options::print_help()
+     printf("A benchmark for Open GL (ES) 2.0\n"
+            "\n"
+            "Options:\n"
++		   "  -c, --display-connector        Seclect display connector, default is HDMI, other options: DSI'\n"
+            "  -b, --benchmark BENCH  A benchmark or options to run: '(scene)?(:opt1=val1)*'\n"
+            "                         (the option can be used multiple times)\n"
+            "  -f, --benchmark-file F Load benchmarks to run from a file containing a\n"
+@@ -257,7 +259,7 @@ Options::parse_args(int argc, char **argv)
+         int c;
+         const char *optname = "";
+ 
+-        c = getopt_long(argc, argv, "b:f:s:ldh",
++        c = getopt_long(argc, argv, "c:b:f:s:ldh",
+                         long_options, &option_index);
+         if (c == -1)
+             break;
+@@ -269,8 +271,15 @@ Options::parse_args(int argc, char **argv)
+ 
+         if (!strcmp(optname, "annotate"))
+             Options::annotate = true;
++
+         if (c == 'b' || !strcmp(optname, "benchmark"))
+             Options::benchmarks.push_back(optarg);
++		else if (c == 'c' || !strcmp(optname, "display-connector")){
++			Options::display_connector = optarg;
++			if((Options::display_connector != "HDMI") && (Options::display_connector != "DSI")){
++				throw std::runtime_error{"Invalid display connector:" + Options::display_connector + ", only support HDMI or DSI"};
++			}
++		}
+         else if (c == 'f' || !strcmp(optname, "benchmark-file"))
+             Options::benchmark_files.push_back(optarg);
+         else if (!strcmp(optname, "validate"))
+diff --git a/src/options.h b/src/options.h
+index 635d5db..e542c96 100644
+--- a/src/options.h
++++ b/src/options.h
+@@ -59,6 +59,7 @@ struct Options {
+     static bool parse_args(int argc, char **argv);
+     static void print_help();
+ 
++	static std::string display_connector;
+     static std::vector<std::string> benchmarks;
+     static std::vector<std::string> benchmark_files;
+     static bool validate;
+-- 
+2.34.1
+

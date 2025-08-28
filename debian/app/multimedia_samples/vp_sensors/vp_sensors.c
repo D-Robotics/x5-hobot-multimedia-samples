@@ -33,14 +33,28 @@ extern vp_sensor_config_t sc1330t_linear_1280x960_raw10_30fps_1lane;
 extern vp_sensor_config_t irs2875_linear_208x1413_raw12_15fps_2lane;
 extern vp_sensor_config_t sc230ai_linear_1920x1080_raw10_10fps_1lane;
 extern vp_sensor_config_t sc230ai_linear_1920x1080_raw10_30fps_1lane;
-extern vp_sensor_config_t sc132gs_linear_1088x1280_raw10_30fps_1lane;
+extern vp_sensor_config_t sc132gs_linear_1088x1280_raw10_60fps_1lane;
 extern vp_sensor_config_t sc035hgs_linear_640x480_raw10_30fps_1lane;
+extern vp_sensor_config_t sc035hgs_mono_640x480_raw10_30fps_1lane;
 extern vp_sensor_config_t ov5640_linear_1920x1080_raw10_30fps_2lane;
 extern vp_sensor_config_t f37_linear_1920x1080_raw10_30fps_1lane;
 extern vp_sensor_config_t imx415_linear_3480x2160_raw10_30fps_4lane;
 extern vp_sensor_config_t imx415_linear_3480x2160_raw10_30fps_2lane;
 extern vp_sensor_config_t sc202cs_linear_1600x1200_raw10_30fps_1lane;
 extern vp_sensor_config_t irs2381c_linear_224x1903_raw12_5fps_2lane;
+extern vp_sensor_config_t sc035hgs_linear_640x480_raw10_30fps_2lane_vc0;
+extern vp_sensor_config_t sc035hgs_linear_640x480_raw10_30fps_2lane_vc1;
+extern vp_sensor_config_t sc231ai_linear_1920x1080_raw10_30fps_2lane;
+extern vp_sensor_config_t imx586_linear_3480x2160_raw10_30fps_4lane;
+extern vp_sensor_config_t os08c10_linear_3480x2160_raw12_30fps_2lane;
+extern vp_sensor_config_t ar0233_linear_1920x1080_raw12_30fps_2lane;
+extern vp_sensor_config_t ar0820std_linear_3840x2160_yuv422_30fps_4lane;
+extern vp_sensor_config_t sc1336_linear_1280x720_raw10_15fps_2lane;
+extern vp_sensor_config_t dummy_sensor_config;
+extern vp_sensor_config_t ar0233_linear_1920x1080_raw12_30fps_2lane_vc0;
+extern vp_sensor_config_t ar0233_linear_1920x1080_raw12_30fps_2lane_vc1;
+extern vp_sensor_config_t ov9782_linear_640x360_raw10_200fps_2lane;
+extern vp_sensor_config_t ov9782_linear_1280x720_raw10_120fps_2lane;
 extern vp_sensor_config_t imx219_linear_640x480_raw10_30fps_2lane;
 extern vp_sensor_config_t imx219_linear_1632x1232_raw10_30fps_2lane;
 extern vp_sensor_config_t imx219_linear_1920x1080_raw10_30fps_2lane;
@@ -54,25 +68,37 @@ extern vp_sensor_config_t imx477_linear_1280x960_raw10_120fps_2lane;
 extern vp_sensor_config_t imx477_linear_1920x1080_raw12_50fps_2lane;
 extern vp_sensor_config_t imx477_linear_2016x1520_raw12_40fps_2lane;
 extern vp_sensor_config_t imx477_linear_4000x3000_raw12_10fps_2lane;
-extern vp_sensor_config_t sc035hgs_linear_640x480_raw10_30fps_2lane_vc0;
-extern vp_sensor_config_t sc035hgs_linear_640x480_raw10_30fps_2lane_vc1;
-extern vp_sensor_config_t sc231ai_linear_1920x1080_raw10_30fps_2lane;
-extern vp_sensor_config_t imx586_linear_3480x2160_raw10_30fps_4lane;
-extern vp_sensor_config_t os08c10_linear_3480x2160_raw12_30fps_2lane;
+extern vp_sensor_config_t ov50h40_linear_4096x3072_raw10_30fps_4lane;
+extern vp_sensor_config_t ox05b1s_linear_2592x1944_raw10_30fps_4lane;
+extern vp_sensor_config_t ox05b1s_linear_2592x1944_raw10_10fps_2lane;
 
 vp_sensor_config_t *vp_sensor_config_list[] = {
 	&sc1330t_linear_1280x960_raw10_30fps_1lane,
 	&irs2875_linear_208x1413_raw12_15fps_2lane,
 	&sc230ai_linear_1920x1080_raw10_10fps_1lane,
 	&sc230ai_linear_1920x1080_raw10_30fps_1lane,
-	&sc132gs_linear_1088x1280_raw10_30fps_1lane,
+	&sc132gs_linear_1088x1280_raw10_60fps_1lane,
 	&sc035hgs_linear_640x480_raw10_30fps_1lane,
+	&sc035hgs_mono_640x480_raw10_30fps_1lane,
 	&ov5640_linear_1920x1080_raw10_30fps_2lane,
 	&f37_linear_1920x1080_raw10_30fps_1lane,
 	&imx415_linear_3480x2160_raw10_30fps_2lane,
 	&imx415_linear_3480x2160_raw10_30fps_4lane,
 	&sc202cs_linear_1600x1200_raw10_30fps_1lane,
 	&irs2381c_linear_224x1903_raw12_5fps_2lane,
+	&sc035hgs_linear_640x480_raw10_30fps_2lane_vc0,
+	&sc035hgs_linear_640x480_raw10_30fps_2lane_vc1,
+	&sc231ai_linear_1920x1080_raw10_30fps_2lane,
+	&imx586_linear_3480x2160_raw10_30fps_4lane,
+	&os08c10_linear_3480x2160_raw12_30fps_2lane,
+	&ar0233_linear_1920x1080_raw12_30fps_2lane,
+	&ar0820std_linear_3840x2160_yuv422_30fps_4lane,
+	&sc1336_linear_1280x720_raw10_15fps_2lane,
+	&dummy_sensor_config,
+	&ar0233_linear_1920x1080_raw12_30fps_2lane_vc0,
+	&ar0233_linear_1920x1080_raw12_30fps_2lane_vc1,
+	&ov9782_linear_640x360_raw10_200fps_2lane,
+	&ov9782_linear_1280x720_raw10_120fps_2lane,
 	&imx219_linear_640x480_raw10_30fps_2lane,
 	&imx219_linear_1632x1232_raw10_30fps_2lane,
 	&imx219_linear_1920x1080_raw10_30fps_2lane,
@@ -80,17 +106,15 @@ vp_sensor_config_t *vp_sensor_config_list[] = {
 	&imx219_linear_3264x2464_raw10_21fps_2lane,
 	&ov5647_linear_640x480_raw10_60fps_2lane,
 	&ov5647_linear_1280x960_raw10_30fps_2lane,
-	&ov5647_linear_1920x1080_raw10_30fps_2lane,	
-	&ov5647_linear_2592x1944_raw10_15fps_2lane,	
+	&ov5647_linear_1920x1080_raw10_30fps_2lane,
+	&ov5647_linear_2592x1944_raw10_15fps_2lane,
 	&imx477_linear_1280x960_raw10_120fps_2lane,
 	&imx477_linear_1920x1080_raw12_50fps_2lane,
 	&imx477_linear_2016x1520_raw12_40fps_2lane,
 	&imx477_linear_4000x3000_raw12_10fps_2lane,
-	&sc035hgs_linear_640x480_raw10_30fps_2lane_vc0,
-	&sc035hgs_linear_640x480_raw10_30fps_2lane_vc1,
-	&sc231ai_linear_1920x1080_raw10_30fps_2lane,
-	&imx586_linear_3480x2160_raw10_30fps_4lane,
-	&os08c10_linear_3480x2160_raw12_30fps_2lane,
+	&ov50h40_linear_4096x3072_raw10_30fps_4lane,
+	&ox05b1s_linear_2592x1944_raw10_30fps_4lane,
+	&ox05b1s_linear_2592x1944_raw10_10fps_2lane,
 };
 
 uint32_t vp_get_sensors_list_number() {
@@ -392,8 +416,8 @@ static int32_t vp_i2c_read_reg16_data16(uint32_t bus, uint8_t i2c_addr, uint16_t
 {
 	int32_t ret;
 	struct i2c_rdwr_ioctl_data data;
-	uint8_t sendbuf[32] = {0};
-	uint8_t readbuf[32] = {0};
+	uint8_t sendbuf[2] = {0};
+	uint8_t readbuf[2] = {0};
 	struct i2c_msg msgs[I2C_RDRW_IOCTL_MAX_MSGS] = {0};
 	char filename[20];
 	int file;
@@ -443,8 +467,8 @@ static int32_t vp_i2c_read_reg16_data8(uint32_t bus, uint8_t i2c_addr, uint16_t 
 {
 	int32_t ret;
 	struct i2c_rdwr_ioctl_data data;
-	uint8_t sendbuf[32] = {0};
-	uint8_t readbuf[32] = {0};
+	uint8_t sendbuf[2] = {0};
+	uint8_t readbuf[1] = {0};
 	struct i2c_msg msgs[I2C_RDRW_IOCTL_MAX_MSGS] = {0};
 	char filename[20];
 	int file;
@@ -468,9 +492,9 @@ static int32_t vp_i2c_read_reg16_data8(uint32_t bus, uint8_t i2c_addr, uint16_t 
 	data.msgs[0].flags = 0;
 	data.msgs[0].buf = sendbuf;
 
-	data.msgs[1].len = 2;
+	data.msgs[1].len = 1;
 	data.msgs[1].addr = i2c_addr;
-	data.msgs[1].flags = 1;
+	data.msgs[1].flags = I2C_M_RD;
 	data.msgs[1].buf = readbuf;
 
 	ret = ioctl(file, I2C_RDWR, (uint64_t)&data);
@@ -542,7 +566,6 @@ static int32_t check_sensor_reg_value(vcon_propertie_t vcon_props,
 		} else {
 			printf("WARN: Sensor Name: %s, Expected Chip ID: 0x%02X, Actual Chip ID Read: 0x%02X\n",
 					sensor_config->sensor_name, sensor_config->chip_id & 0x0000FFFF, chip_id);
-			return -1;
 		}
 
 	}
@@ -671,13 +694,13 @@ static void should_used_csi(int *is_need_used_csi)
 			printf("[INFO] board_id is %s, so skip csi test for index 1\n", board_id);
 			is_need_used_csi[1] = false;// board 201 not use csi1
 		}
-		if (board_id[0] == '3' || board_id[0] == '5') {
-			printf("[INFO] board_id is %s, so skip csi test for index 1 and index 3\n", board_id);
+		if (strncmp(board_id, "0x03", 4) == 0 || strncmp(board_id, "0x05", 4) == 0) {
+			printf("[INFO] RDK board_id is %s, so skip csi test for index 1 and index 3\n", board_id);
 			is_need_used_csi[1] = false;
 			is_need_used_csi[3] = false;
-		}	
+		}
 	} else {
-		printf("read board_id file failed, so skip csi.\n");
+		printf("read board_id file failed, so do not skip csi.\n");
 	}
 }
 
@@ -732,8 +755,12 @@ void vp_sensor_detect_structed(csi_list_info_t *csi_list_info)
 			for (int j = 0; j < vp_get_sensors_list_number(); j++) {
 				if(!mclk_is_not_configed){
 					/* enable mclk */
-					write_mipi_host_freq(i, vp_sensor_config_list[j]->vin_attr_ex->mclk_ex_attr.mclk_freq);
-					enable_mipi_host_clock(i, 1);
+					if (vp_sensor_config_list[j]->vin_attr_ex->vin_attr_ex_mask)
+					{
+						write_mipi_host_freq(i, vp_sensor_config_list[j]->vin_attr_ex->mclk_ex_attr.mclk_freq);
+						enable_mipi_host_clock(i, 1);
+					}
+
 				}
 				for (int k = 0; k < 8; ++k) {
 					if (vcon_props_array[i].gpio_oth[k] != 0) {
@@ -777,6 +804,7 @@ int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int u
 	int32_t ret = -1, j = 0;
 	static int32_t i = 0;
 	uint32_t frequency = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
+	uint64_t vin_attr_ex_mask = sensor_config->vin_attr_ex->vin_attr_ex_mask;
 	int is_need_used_csi[VP_MAX_VCON_NUM] = {true, true, true, true};
 	should_used_csi(is_need_used_csi);
 
@@ -805,8 +833,11 @@ int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int u
 		if (vcon_props_array[i].status[0] == 'o') { // okay
 			if(!mclk_is_not_configed){
 				/* enable mclk */
-				write_mipi_host_freq(i, frequency);
-				enable_mipi_host_clock(i, 1);
+				if (vin_attr_ex_mask)
+				{
+					write_mipi_host_freq(i, frequency);
+					enable_mipi_host_clock(i, 1);
+				}
 			}
 			// 检测该vcon上连接的 sensor
 			/*enable gpio_oth, enable camera sensor gpio, maybe pwd/reset gpio */
@@ -842,6 +873,7 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config, vp_csi_conf
 {
 	int32_t ret = 0, i = 0, j = 0;
 	uint32_t frequency = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
+	uint64_t vin_attr_ex_mask = sensor_config->vin_attr_ex->vin_attr_ex_mask;
 	int is_need_used_csi[VP_MAX_VCON_NUM] = {true, true, true, true};
 	should_used_csi(is_need_used_csi);
 
@@ -866,9 +898,11 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config, vp_csi_conf
 		if (vcon_props_array[i].status[0] == 'o') { // okay
 			if(!mclk_is_not_configed){
 				/* enable mclk */
-				write_mipi_host_freq(i, frequency);
-				enable_mipi_host_clock(i, 1);
-
+				if (vin_attr_ex_mask)
+				{
+					write_mipi_host_freq(i, frequency);
+					enable_mipi_host_clock(i, 1);
+				}
 			}
 			// 检测该vcon上连接的 sensor
 			/*enable gpio_oth, enable camera sensor gpio, maybe pwd/reset gpio */

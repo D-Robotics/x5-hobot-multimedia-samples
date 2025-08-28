@@ -1,17 +1,3 @@
-// Copyright (c) 2024，D-Robotics.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 /******************************************************************************
   Copyright (c) 2013 Morten Houmøller Nygaard - www.mortz.dk - admin@mortz.dk
 
@@ -72,8 +58,11 @@ void ws_wrap_destory(ws_wrap_t *instance)
 		list_free(instance->m_list);
 		instance->m_list = NULL;
 	}
-	if (instance)
+	if (instance){
 		free(instance);
+		g_ws_instance = NULL;
+	}
+
 }
 
 /**
@@ -103,13 +92,13 @@ void sigint_handler(int sig)
  */
 void cleanup_client(void *args)
 {
-	ws_client *n = args;
-	if (n != NULL)
-	{
-		printf("Shutting client down..\n\n> ");
-		fflush(stdout);
-		list_remove(g_ws_instance->m_list, n);
-	}
+	// ws_client *n = args;
+	// if (n != NULL)
+	// {
+	// 	printf("Shutting client down..\n\n> ");
+	// 	fflush(stdout);
+	// 	list_remove(g_ws_instance->m_list, n);
+	// }
 }
 
 int ws_send_message(const char *message, uint64_t length)
@@ -353,16 +342,12 @@ void *handleClient(void *args)
 			n->message = NULL;
 		}
 	}
-
-	// 如果推流线程存在就退出
-	if (n->stream_thread.pThread_Id != 0)
-		mThreadStop(&n->stream_thread);
-
-	printf("Shutting client down..\n\n");
+	printf("Shutting client down..%p \n\n", g_ws_instance);
 
 	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-	if (g_ws_instance->m_list != NULL && n != NULL)
+	if ((g_ws_instance != NULL) && (g_ws_instance->m_list != NULL) && (n != NULL))
 	{
+		printf("client thread remove ... [%p] [%p]\n", g_ws_instance, g_ws_instance->m_list);
 		list_remove(g_ws_instance->m_list, n);
 	}
 	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);

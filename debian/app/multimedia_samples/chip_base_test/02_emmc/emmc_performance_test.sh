@@ -87,7 +87,7 @@ while [ $(($(date +%s) - start_time)) -lt $total_duration ]; do
     loop_num=$((loop_num + 1))
     echo "loop_test: ${loop_num}"
 
-    iozone -e -I -a -r 4K -r 16K -r 64K -r 256K -r 1M -r 4M -r 16M -s 16K -s 1M -s 16M -s 128M -s 1G -f "$output_dir/iozone_data" -Rb "$output_dir/test_iozone_emmc_performance_${loop_num}.xls"
+    iozone -e -I -a -r 4K -r 16K -r 64K -r 256K -r 1M -r 4M -r 16M -s 16K -s 1M -s 16M -s 128M -s 256M -f "$output_dir/iozone_data" -Rb "$output_dir/test_iozone_emmc_performance_${loop_num}.xls"
     exit_code=$?
 
     if [ "$exit_code" -ne 0 ]; then

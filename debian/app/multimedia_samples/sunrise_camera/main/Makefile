@@ -48,14 +48,17 @@ endif
 ifeq ($(MODULE_WEBSOCKET), y)
 	MODULE_LIB += -lwebsocket
 endif
+ifeq ($(MODULE_MEDIA_SERVER), y)
+	MODULE_LIB += -lmedia_server  -lstdc++
+endif
 
 CC := $(COMPILE_PREFIX)gcc
 CFLAGS := $(INC) -Werror -O0 -DBSD=1 -fPIC $(CFLAGS_EX)
 #CFLAGS := $(INC) -O0 -Wall -DBSD=1 -fPIC
-CXX := $(COMPILE_PREFIX)g++
+CXX := $(COMPILE_PREFIX)c++
 CXXFLAGS := $(CFLAGS)
 LINK := $(COMPILE_PREFIX)gcc -o
-LIBRARY_LINK := $(COMPILE_PREFIX)g++ -shared -o
+LIBRARY_LINK := $(COMPILE_PREFIX)c++ -shared -o
 LIBRARY_LINK_STATIC := $(COMPILE_PREFIX)ar cr
 LIBRARY_LINK_OPTS =	$(LDFLAGS_EX) $(BASIC_LIB) $(MODULE_LIB) $(UTILS_LIB) $(PLATFORM_LIBS) -lpthread -lm -ldl -lrt $(LIB)
 STRIP := $(COMPILE_PREFIX)strip

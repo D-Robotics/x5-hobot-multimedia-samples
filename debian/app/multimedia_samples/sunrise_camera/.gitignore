@@ -10,3 +10,6 @@ install
 *.obj
 *.dep
 out
+.vscode-ctags
+third_party/ZLMediaKit
+!Transport/media_server/mk_api/lib/*.a

@@ -15,8 +15,10 @@ MODULE_VPP := y
 # MODULE_NETWORK := y
 # MODULE_RECORD := y
 # MODULE_ALARM := y
-MODULE_RTSP := y
+# MODULE_RTSP := y
 MODULE_WEBSOCKET := y
+MODULE_MEDIA_SERVER := y
+# MODULE_ENABLE_ASAN := y
 
 subdir :=
 subdir += common
@@ -52,11 +54,22 @@ ifeq ($(MODULE_WEBSOCKET), y)
 	CFLAGS_EX += -DMODULE_WEBSOCKET
 	subdir += Transport/websocket
 endif
+ifeq ($(MODULE_MEDIA_SERVER), y)
+	CFLAGS_EX += -DMODULE_MEDIA_SERVER
+	subdir += WebServer/
+	subdir += Transport/media_server/mk_api
+	subdir += Transport/media_server
+endif
 subdir += main
 
 ############################################################
 ifeq ($(MODULE_VPP), y)
-	PLATFORM_LIBS_NAME := cam vpf hbmem multimedia avformat avcodec avutil swresample ffmedia gdcbin cjson alog dnn cnn_intf hbrt_bayes_aarch64 ssl crypto drm z dl rt pthread
+	PLATFORM_LIBS_NAME := cam vpf hbmem multimedia avformat avcodec avutil swresample ffmedia gdcbin cjson alog dnn cnn_intf hbrt_bayes_aarch64 ssl crypto drm z dl rt pthread mk_api jsoncpp zlmediakit zltoolkit mov ext-codec mpeg flv
 	PLATFORM_LIBS += $(patsubst %,-l%,$(PLATFORM_LIBS_NAME))
 	LDFLAGS_EX += -L/usr/hobot/lib
+endif
+
+ifeq ($(MODULE_ENABLE_ASAN), y)
+	PLATFORM_LIBS += -lasan
+	CFLAGS_EX += -fsanitize=address -static-libasan -lasan
 endif

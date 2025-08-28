@@ -30,6 +30,7 @@
 #include "hb_media_codec.h"
 #include "hb_media_error.h"
 #include "common_utils.h"
+#include "ping_pang_file_saver.h"
 
 #define VSE_MAX_CHANNELS 6
 
@@ -54,11 +55,16 @@ static struct option const long_options[] = {
 
 
 int32_t running = 0;
+static uint32_t sensor_type = 0;
+static uint32_t link_port = 0;
 
 int create_and_run_vflow(pipe_contex_t *pipe_contex);
 int encode_init(void *data, int fps);
 int encode_deinit(void *data);
 void *read_vse_data(void *contex);
+int32_t hbn_deserial_create(deserial_config_t *des_config, deserial_handle_t *des_fd);
+int32_t hbn_deserial_attach_to_vin(deserial_handle_t des_fd, camera_des_link_t link, vpf_handle_t vin_fd);
+
 
 static void print_help(const char *argv0) {
 	printf("usage: %s [options]\n", argv0);
@@ -102,11 +108,14 @@ int main(int argc, char** argv) {
 				index,
 				vp_sensor_config_list[index]->sensor_name,
 				vp_sensor_config_list[index]->config_file);
-		ret = vp_sensor_fixed_mipi_host(pipe_contex.sensor_config, &pipe_contex.csi_config);
-		if (ret != 0) {
-			printf("No Camera Sensor found. Please check if the specified "
-				"sensor is connected to the Camera interface.\n");
-			return ret;
+		sensor_type = pipe_contex.sensor_config->sensor_type;
+		if(sensor_type == SENSOR_TYPE_NORMAL) {
+			ret = vp_sensor_fixed_mipi_host(pipe_contex.sensor_config, &pipe_contex.csi_config);
+			if (ret != 0) {
+				printf("No Camera Sensor found. Please check if the specified "
+					"sensor is connected to the Camera interface.\n");
+				return ret;
+			}
 		}
 	} else {
 		printf("Unsupport sensor index:%d\n", index);
@@ -158,6 +167,29 @@ static int create_camera_node(pipe_contex_t *pipe_contex) {
 	return 0;
 }
 
+
+static int create_deserial_node(pipe_contex_t *pipe_contex) {
+
+	vp_sensor_config_t *sensor_config = NULL;
+	deserial_config_t *deserial_config = NULL;
+	deserial_handle_t *des_handle = NULL;
+
+	int32_t ret = 0;
+	des_handle = &pipe_contex->des_fd;
+
+	sensor_config = pipe_contex->sensor_config;
+	deserial_config = sensor_config->deserial_node_attr;
+
+	ret = hbn_deserial_create(deserial_config, des_handle);
+	if(ret != 0){
+		printf("hbn_deserial_create failed ret = %d\n", ret);
+		return ret;
+	}
+	printf("deserial_config:%02x_%s, des_handle:%ld \n\r" ,deserial_config->addr,
+	deserial_config->name, *des_handle);
+	return 0;
+}
+
 static int create_vin_node(pipe_contex_t *pipe_contex) {
 	vp_sensor_config_t *sensor_config = NULL;
 	vin_node_attr_t *vin_node_attr = NULL;
@@ -179,7 +211,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 	vin_node_handle = &pipe_contex->vin_node_handle;
 
 	if(pipe_contex->csi_config.mclk_is_not_configed){
-		//设备树中没有配置mclk：使用外部晶振
+		// 设备树中没有配置 mclk：使用外部晶振
 		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
 			pipe_contex->csi_config.index);
 	}else{
@@ -199,6 +231,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 	// 设置输出通道的属性
 	ret = hbn_vnode_set_ochn_attr(*vin_node_handle, ochn_id, vin_ochn_attr);
 	ERR_CON_EQ(ret, 0);
+
 	if (vin_attr_ex_mask) {
 		for (uint8_t i = 0; i < VIN_ATTR_EX_INVALID; i ++) {
 			if ((vin_attr_ex_mask & (1 << i)) == 0)
@@ -295,7 +328,7 @@ static int create_vse_node(pipe_contex_t *pipe_contex) {
 	vse_ochn_attr[2].target_w = 224;
 	vse_ochn_attr[2].target_h = 224;
 
-	// 设置VSE通道2输出属性，ROI为原图中心点不变，宽、高各裁剪一半，输出图像宽、高等于ROI区域宽高
+	// 设置 VSE 通道 2 输出属性， ROI 为原图中心点不变，宽、高各裁剪一半，输出图像宽、高等于 ROI 区域宽高
 	vse_ochn_attr[3].roi.x = input_width / 2 - input_width / 4;
 	vse_ochn_attr[3].roi.y = input_height / 2 - input_height / 4;
 	vse_ochn_attr[3].roi.w = input_width / 2;
@@ -344,7 +377,7 @@ static int create_vse_node(pipe_contex_t *pipe_contex) {
 int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 	int32_t ret = 0;
 
-	// 创建pipeline中的每个node
+	// 创建 pipeline 中的每个 node
 	ret = create_camera_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
 	ret = create_vin_node(pipe_contex);
@@ -354,7 +387,7 @@ int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 	ret = create_vse_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
 
-	// 创建HBN flow
+	// 创建 HBN flow
 	ret = hbn_vflow_create(&pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
@@ -384,9 +417,18 @@ int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 	ERR_CON_EQ(ret, 0);
 
 	/* camera -- vin */
-	ret = hbn_camera_attach_to_vin(pipe_contex->cam_fd,
+	if(sensor_type != SENSOR_TYPE_NORMAL) {
+		ret = create_deserial_node(pipe_contex);
+		ERR_CON_EQ(ret, 0);
+		ret = hbn_camera_attach_to_deserial(pipe_contex->cam_fd, pipe_contex->des_fd, link_port);
+		ERR_CON_EQ(ret, 0);
+		ret = hbn_deserial_attach_to_vin(pipe_contex->des_fd, link_port, pipe_contex->vin_node_handle);
+		ERR_CON_EQ(ret, 0);
+	}else {
+		ret = hbn_camera_attach_to_vin(pipe_contex->cam_fd,
 							pipe_contex->vin_node_handle);
-	ERR_CON_EQ(ret, 0);
+		ERR_CON_EQ(ret, 0);
+	}
 
 	// vflow start
 	ret = hbn_vflow_start(pipe_contex->vflow_fd);
@@ -469,21 +511,34 @@ void vp_vin_print_hb_mem_graphic_buf_t(
 	}
 	printf("\n");
 }
+int delete_file_if_exists(const char *filename) {
+    struct stat buffer;
 
+    // 使用 stat 检查文件是否存在
+    if (stat(filename, &buffer) == 0) {
+        // 文件存在，尝试删除
+        if (remove(filename) == 0) {
+            // printf("File '%s' deleted successfully.\n", filename);
+            return 0;  // 删除成功
+        } else {
+            perror("Error deleting file");
+            return -1; // 删除失败
+        }
+    } else {
+        printf("File '%s' does not exist.\n", filename);
+        return 0; // 文件不存在，不视为错误
+    }
+}
 void *read_vse_data(void *context) {
 	pipe_contex_t *pipe_context = (pipe_contex_t *)context;
 	hbn_vnode_handle_t vse_node_handle = pipe_context->vse_node_handle;
 	hbn_vnode_image_t out_img[VSE_MAX_CHANNELS] = {0};
 	char dst_file[128] = {0};
-	uint32_t count = 0;
+	uint64_t count = 0;
 	int ret = 0;
 	media_codec_buffer_t input_buffer = {0};
 	media_codec_buffer_t ouput_buffer = {0};
 	media_codec_output_buffer_info_t info;
-	FILE *fp_output = fopen("single_pipe_vin_isp_vse_vpu.h264", "w+b");
-	if (NULL == fp_output) {
-		printf("Failed to open output file\n");
-	}
 
 	uint8_t uuid[] = "dc45e9bd-e6d948b7-962cd820-d923eeef+SEI_D-Robotics";
 
@@ -494,9 +549,11 @@ void *read_vse_data(void *context) {
 		return NULL;
 	}
 
+	ping_pang_file_saver_t *ping_pang_file_saver = NULL;
+	ping_pang_file_saver = ping_pang_file_saver_create("single_pipe_vin_isp_vse_vpu.h264", 30 * 60);
 	while (running) {
 		for (uint32_t i = 0; i < VSE_MAX_CHANNELS; ++i) {
-			ret = hbn_vnode_getframe(vse_node_handle, i, 1000, &out_img[i]);
+			ret = hbn_vnode_getframe(vse_node_handle, i, 2000, &out_img[i]);
 			if (ret != 0) {
 				printf("hbn_vnode_getframe VSE channel %d failed\n", i);
 				break;
@@ -526,9 +583,14 @@ void *read_vse_data(void *context) {
 			printf("hb_mm_mc_dequeue_output_buffer failed\n");
 			break;
 		}
-		fwrite(ouput_buffer.vstream_buf.vir_ptr,
-				ouput_buffer.vstream_buf.size, 1, fp_output);
-		printf("count:%d\n", count);
+		if(ping_pang_file_saver != NULL){
+			ret = ping_pang_file_saver_write(ping_pang_file_saver,
+				ouput_buffer.vstream_buf.size, ouput_buffer.vstream_buf.vir_ptr);
+			if(ret != 0){
+				printf("ping pang file saver failed\n");
+			}
+			//printf("count:%d\n", count);
+		}
 		ret = hb_mm_mc_queue_output_buffer(&media_context,
 											&ouput_buffer, 2000);
 		if (ret != 0) {
@@ -537,7 +599,7 @@ void *read_vse_data(void *context) {
 		}
 		if (count % 60 == 0) {
 			for (uint32_t i = 0; i < VSE_MAX_CHANNELS; ++i) {
-				snprintf(dst_file, sizeof(dst_file), "vse_ch%d_%d.yuv",
+				snprintf(dst_file, sizeof(dst_file), "vse_ch%d_%ld.yuv",
 						i, count);
 				dump_2plane_yuv_to_file(dst_file,
 					out_img[i].buffer.virt_addr[0],
@@ -548,6 +610,15 @@ void *read_vse_data(void *context) {
 						" #######################\n", i);
 				vp_vin_print_hbn_vnode_image_t(&out_img[i]);
 			}
+
+			if(count >= 60){
+				uint64_t old_count = count - 60;
+				for (uint32_t i = 0; i < VSE_MAX_CHANNELS; ++i) {
+					snprintf(dst_file, sizeof(dst_file), "vse_ch%d_%ld.yuv",
+							i, old_count);
+					delete_file_if_exists(dst_file);
+				}
+			}
 		}
 		for (uint32_t i = 0; i < VSE_MAX_CHANNELS; ++i) {
 			hbn_vnode_releaseframe(vse_node_handle, i, &out_img[i]);
@@ -555,8 +626,7 @@ void *read_vse_data(void *context) {
 
 		count++;
 	}
-	fclose(fp_output);
-
+	ping_pang_file_saver_destroy(ping_pang_file_saver);
 	return NULL;
 }
 

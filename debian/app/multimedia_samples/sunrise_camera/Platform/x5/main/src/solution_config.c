@@ -454,7 +454,7 @@ int32_t solution_cfg_load()
 		return 0;
 	}
 	sprintf(g_solution_config.version,
-		"sunrise camera version: v3.1.0, build time:%s %s", __DATE__, __TIME__);
+		"sunrise camera version: v%s, build time:%s %s", VERSION, __DATE__, __TIME__);
 	// 获取芯片型号、接入的sensor型号、支持的算法模型清单
 	vp_get_hard_capability(&g_solution_config);
 

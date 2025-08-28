@@ -19,6 +19,7 @@
 extern "C" {
 #endif
 #include <time.h>
+#include <stdint.h>
 
 ///////////////////////////////up2p///////////////////////////////////////
 typedef struct
@@ -103,6 +104,22 @@ typedef struct
 }T_SDK_RTSP_SRV_PARAM;
 
 
+typedef struct
+{
+	const char* media_name;
+	const char* stream_name;
+	const char* codec_type_name;
+	void* media; //	返回值
+}T_SDK_MEDIA_SRV_CREATE_PARAM;
+
+typedef struct {
+	void *media;
+	const char* data;
+	int data_length;
+	uint64_t pts;
+	uint64_t dts;
+	const char *codec_name;
+}T_SDK_MEDIA_SRV_PUSH_PARAM;
 ///////////////////////////////camera///////////////////////////////////////
 typedef void* P_RINGBUFFER;
 
@@ -726,11 +743,24 @@ typedef struct {
 	char chip_type[16];
 } T_SDK_CHIP_TYPE;
 
+typedef struct{
+	int pipeline_id;
+	const char *input_file_name;
+	const char *actual_codec_type;
+	const char *config_codec_type;
+}T_SDK_DECODE_PARAM_CHECK_SINGLE_INFO;
+
+typedef struct{
+	int not_match_count;
+	T_SDK_DECODE_PARAM_CHECK_SINGLE_INFO decode_params[32];
+}T_SDK_DECODE_PARAM_CHECK_INFO;
+
 typedef struct
 {
 	char *param;
 	int ion_lack;
 	float vpu_lack;
+	T_SDK_DECODE_PARAM_CHECK_INFO decode_param_check_info;
 }T_SDK_CHECK_INFO;
 
 #if defined (__cplusplus)
@@ -738,5 +768,3 @@ typedef struct
 #endif
 
 #endif
-
-

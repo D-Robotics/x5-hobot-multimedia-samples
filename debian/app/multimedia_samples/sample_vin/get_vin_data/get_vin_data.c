@@ -30,6 +30,7 @@
 #include "common_utils.h"
 
 #define MAX_SENSORS 4
+#define DEBUG
 
 static struct option const long_options[] = {
 	{"sensor", required_argument, NULL, 's'},
@@ -41,6 +42,10 @@ static struct option const long_options[] = {
 static int create_and_run_vflow(pipe_contex_t *pipe_contex);
 static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count);
 static int lpwm_enable_chn(hbn_vnode_handle_t vin_node_handle, uint8_t enable, uint8_t chn);
+
+int32_t hbn_deserial_create(deserial_config_t *des_config, deserial_handle_t *des_fd);
+int32_t hbn_deserial_attach_to_vin(deserial_handle_t des_fd, camera_des_link_t link, vpf_handle_t vin_fd);
+
 
 static void print_help() {
 	printf("Usage: get_vin_data [OPTIONS]\n");
@@ -57,14 +62,17 @@ static void command_help() {
 	printf("***************  Command Lists  ***************\n");
 	printf(" g	-- get single frame \n");
 	printf(" l	-- get a set frames \n");
-	printf(" x      -- only enable lpwm \n");
-	printf(" y      -- only disable lpwm \n");
+	printf(" x      -- only enable lpwm, support sc035hgs sensor \n");
+	printf(" y      -- only disable lpwm, support sc035hgs sensor \n");
 	printf(" q	-- quit  \n");
 	printf(" h	-- print help message\n");
 }
 
 static int settle = -1;
 static uint32_t sensor_mode = 0; // 1: NORMAL_M; 2: DOL2_M; 6: SLAVE_M
+static uint32_t link_port = 0;
+static uint32_t sensor_type = 0;
+static uint16_t date_type;
 
 int main(int argc, char** argv) {
 	int ret = 0;
@@ -114,6 +122,11 @@ int main(int argc, char** argv) {
 					index,
 					vp_sensor_config_list[index]->sensor_name,
 					vp_sensor_config_list[index]->config_file);
+
+			sensor_type = pipe_contex[i].sensor_config->sensor_type;
+			date_type = pipe_contex[i].sensor_config->camera_config->format;
+			if(sensor_type != SENSOR_TYPE_NORMAL)
+				continue;
 			ret = vp_sensor_fixed_mipi_host(pipe_contex[i].sensor_config, &pipe_contex[i].csi_config);
 			if (ret != 0) {
 				printf("No Camera Sensor found. Please check if the specified "
@@ -150,6 +163,7 @@ int main(int argc, char** argv) {
 	hb_mem_module_close();
 	return 0;
 }
+
 static int create_camera_node(pipe_contex_t *pipe_contex) {
 
 	camera_config_t *camera_config = NULL;
@@ -158,6 +172,7 @@ static int create_camera_node(pipe_contex_t *pipe_contex) {
 
 	sensor_config = pipe_contex->sensor_config;
 	camera_config = sensor_config->camera_config;
+
 	/* Debug settle */
 	if (settle >= 0 && settle <= 127) {
 		camera_config->mipi_cfg->rx_attr.settle = settle;
@@ -171,6 +186,29 @@ static int create_camera_node(pipe_contex_t *pipe_contex) {
 
 	return 0;
 }
+
+static int create_deserial_node(pipe_contex_t *pipe_contex) {
+
+	vp_sensor_config_t *sensor_config = NULL;
+	deserial_config_t *deserial_config = NULL;
+	deserial_handle_t *des_handle = NULL;
+
+	int32_t ret = 0;
+	des_handle = &pipe_contex->des_fd;
+
+	sensor_config = pipe_contex->sensor_config;
+	deserial_config = sensor_config->deserial_node_attr;
+
+	ret = hbn_deserial_create(deserial_config, des_handle);
+	if(ret != 0){
+		printf("hbn_deserial_create failed ret = %d\n", ret);
+		return ret;
+	}
+	printf("deserial_config:,%02x,%s, des_handle:%ld \n\r" ,deserial_config->addr,
+	deserial_config->name, *des_handle);
+	return 0;
+}
+
 
 static int create_vin_node(pipe_contex_t *pipe_contex) {
 	vp_sensor_config_t *sensor_config = NULL;
@@ -190,11 +228,13 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 	vin_node_attr = sensor_config->vin_node_attr;
 	vin_ichn_attr = sensor_config->vin_ichn_attr;
 	vin_ochn_attr = sensor_config->vin_ochn_attr;
+
 	hw_id = vin_node_attr->cim_attr.mipi_rx;
 	vin_node_handle = &pipe_contex->vin_node_handle;
+	link_port = vin_node_attr->cim_attr.vc_index;
 
 	if(pipe_contex->csi_config.mclk_is_not_configed){
-		//设备树中没有配置mclk：使用外部晶振
+		// 设备树中没有配置 mclk：使用外部晶振
 		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
 			pipe_contex->csi_config.index);
 	}else{
@@ -211,10 +251,11 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 	ret = hbn_vnode_set_ichn_attr(*vin_node_handle, ichn_id, vin_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 	// 设置输出通道的属性
-	// 使能DDR输出
+	// 使能 DDR 输出
 	vin_ochn_attr->ddr_en = 1;
 	ret = hbn_vnode_set_ochn_attr(*vin_node_handle, ochn_id, vin_ochn_attr);
 	ERR_CON_EQ(ret, 0);
+
 	if (vin_attr_ex_mask) {
 		for (uint8_t i = 0; i < VIN_ATTR_EX_INVALID; i ++) {
 			if ((vin_attr_ex_mask & (1 << i)) == 0)
@@ -239,26 +280,38 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 	int32_t ret = 0;
 
-	// 创建pipeline中的每个node
+	// 创建 pipeline 中的每个 node
 	ret = create_camera_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
 	ret = create_vin_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
 
-	// 创建HBN flow
+	// 创建 HBN flow
 	ret = hbn_vflow_create(&pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
 							pipe_contex->vin_node_handle);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_camera_attach_to_vin(pipe_contex->cam_fd,
+
+	if(sensor_type != SENSOR_TYPE_NORMAL) {
+		ret = create_deserial_node(pipe_contex);
+		ERR_CON_EQ(ret, 0);
+		ret = hbn_camera_attach_to_deserial(pipe_contex->cam_fd, pipe_contex->des_fd, link_port);
+		ERR_CON_EQ(ret, 0);
+		ret = hbn_deserial_attach_to_vin(pipe_contex->des_fd, link_port, pipe_contex->vin_node_handle);
+		ERR_CON_EQ(ret, 0);
+	}else {
+		ret = hbn_camera_attach_to_vin(pipe_contex->cam_fd,
 							pipe_contex->vin_node_handle);
-	ERR_CON_EQ(ret, 0);
+		ERR_CON_EQ(ret, 0);
+	}
+
 	ret = hbn_vflow_start(pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);
 
 	return 0;
 }
+
 
 void vin_dump_func(hbn_vnode_handle_t vin_node_handle) {
 	int ret;
@@ -267,42 +320,64 @@ void vin_dump_func(hbn_vnode_handle_t vin_node_handle) {
 	uint32_t timeout = 10000;
 	hbn_vnode_image_t out_img;
 
-	// 调用hbn_vnode_getframe获取帧数据
+	// 获取帧数据
 	ret = hbn_vnode_getframe(vin_node_handle, ochn_id, timeout, &out_img);
 	if (ret != 0) {
-		printf("hbn_vnode_getframe from vin chn:%d failed(%d)\n", ochn_id, ret);
+		printf("Error: hbn_vnode_getframe failed for vin chn:%d (ret=%d)\n", ochn_id, ret);
 		return;
 	}
 
-	// 将帧数据写入文件
+	// 生成基础文件名
 	snprintf(dst_file, sizeof(dst_file),
-		"handle_%d_vin_chn%d_%dx%d_stride_%d_frameid_%d_ts_%ld.raw",
-		(int)vin_node_handle, ochn_id,
-		out_img.buffer.width, out_img.buffer.height, out_img.buffer.stride,
-		out_img.info.frame_id, out_img.info.timestamps);
-	printf("handle %d vin dump raw %dx%d(stride:%d), buffer size: %ld frame id: %d,"
-			" timestamp: %ld\n",
-			(int)vin_node_handle,
-			out_img.buffer.width, out_img.buffer.height,
-			out_img.buffer.stride,
-			out_img.buffer.size[0],
-			out_img.info.frame_id,
-			out_img.info.timestamps);
-	dump_image_to_file(dst_file, out_img.buffer.virt_addr[0], out_img.buffer.size[0]);
+			 "handle_%d_chn%d_%dx%d_stride_%d_frameid_%d_ts_%ld",
+			 (int)vin_node_handle, ochn_id,
+			 out_img.buffer.width, out_img.buffer.height, out_img.buffer.stride,
+			 out_img.info.frame_id, out_img.info.timestamps);
+
+	// 处理不同数据格式
+	switch (date_type) {
+		case SENSOR_DATA_TYPE_RAW10:
+		case SENSOR_DATA_TYPE_RAW12:
+			strcat(dst_file, ".raw");
+			printf("Dumping RAW data: handle %d, resolution: %dx%d (stride: %d), size: %ld, frame id: %d, timestamp: %ld\n",
+					(int)vin_node_handle,
+					out_img.buffer.width, out_img.buffer.height,
+					out_img.buffer.stride,
+					out_img.buffer.size[0],
+					out_img.info.frame_id,
+					out_img.info.timestamps);
+			dump_image_to_file(dst_file, out_img.buffer.virt_addr[0], out_img.buffer.size[0]);
+			break;
+
+		case SENSOR_DATA_TYPE_YUV422:
+			strcat(dst_file, ".yuv");
+			printf("Dumping YUV data: handle %d, resolution: %dx%d (stride: %d), size: %ld + %ld, frame id: %d, timestamp: %ld\n",
+					(int)vin_node_handle,
+					out_img.buffer.width, out_img.buffer.height,
+					out_img.buffer.stride,
+					out_img.buffer.size[0], out_img.buffer.size[1],
+					out_img.info.frame_id,
+					out_img.info.timestamps);
+			ret = dump_2plane_yuv_to_file(dst_file,
+					out_img.buffer.virt_addr[0],
+					out_img.buffer.virt_addr[1],
+					out_img.buffer.size[0],
+					out_img.buffer.size[1]);
+			if (ret != 0) {
+				printf("Error: Failed to dump YUV to file\n");
+			} else {
+				printf("Dump successful: %s (size: %ld)\n", dst_file, sizeof(dst_file));
+			}
+			break;
+
+		default:
+			printf("Error: Unsupported data type %d\n", out_img.buffer.format);
+			break;
+	}
+
 	// 释放帧数据
 	hbn_vnode_releaseframe(vin_node_handle, ochn_id, &out_img);
 }
-
-/*
-enum lpwm_dynamic_enable {
-        LPWM_CHANGE_ATTR,
-        LPWM_ONLY_ENABLE,
-        LPWM_ONLY_DISABLE,
-        LPWM_DYNAMIC_MAX,
-};
- */
-
-
 
 static int lpwm_enable_chn(hbn_vnode_handle_t vin_node_handle, uint8_t enable, uint8_t chn)
 {
@@ -342,6 +417,7 @@ static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count)
 	char option = 'a';
 	hbn_vnode_handle_t vin_node_handle;
 	int running = 1;
+	const char *sensor_name;
 
 	command_help();
 	printf("\nCommand: ");
@@ -368,14 +444,28 @@ static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count)
 				break;
 			case 'x':
 				for (i = 0; i < sensor_count; i ++) {
-					vin_node_handle = pipe_contex[i].vin_node_handle;
-					(void)lpwm_enable_chn(vin_node_handle, 1, 0);
+					sensor_name = pipe_contex[i].sensor_config->sensor_name;
+					if (sensor_name != NULL && (strcmp(sensor_name, "sc035hgs") == 0 ||
+									strcmp(sensor_name, "sc035hgs-vc0") == 0 ||
+									strcmp(sensor_name, "sc035hgs-vc1") == 0)) {
+						vin_node_handle = pipe_contex[i].vin_node_handle;
+						(void)lpwm_enable_chn(vin_node_handle, 1, 0);
+					} else {
+						printf("only support rx0 sc035hgs.\n");
+					}
 				}
 				break;
 			case 'y':
 				for (i = 0; i < sensor_count; i ++) {
-					vin_node_handle = pipe_contex[i].vin_node_handle;
-					(void)lpwm_enable_chn(vin_node_handle, 0, 0);
+					sensor_name = pipe_contex[i].sensor_config->sensor_name;
+					if (sensor_name != NULL && (strcmp(sensor_name, "sc035hgs") == 0 ||
+									strcmp(sensor_name, "sc035hgs-vc0") == 0 ||
+									strcmp(sensor_name, "sc035hgs-vc1") == 0)) {
+						vin_node_handle = pipe_contex[i].vin_node_handle;
+						(void)lpwm_enable_chn(vin_node_handle, 0, 0);
+					} else {
+						printf("only support rx0 sc035hgs.\n");
+					}
 				}
 				break;
 			case 'h':

@@ -1,6 +1,6 @@
 include ./Makefile.in
 
-EXCLUDED_DIRS := chip_base_test sunrise_camera
+EXCLUDED_DIRS := chip_base_test sunrise_camera sample_trustzone/sample_ta
 EXCLUDED_DIRS_FLAGS := $(foreach dir,$(EXCLUDED_DIRS), ! -path "*$(dir)*")
 SUB_FOLDERS := $(shell find $(PLATFORM_SAMPLES_DIR) -name "Makefile" \
 	$(EXCLUDED_DIRS_FLAGS) | sed 's/Makefile//g' | sed '/samples\/$$/d')

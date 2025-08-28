@@ -85,6 +85,8 @@ void vp_codec_get_user_buffer_param(mc_video_codec_enc_params_t *enc_param, int 
 void *vp_decode_work_func(void *param);
 
 void vp_codec_print_media_codec_output_buffer_info(ImageFrame *frame);
+
+const char *vp_codec_get_codec_type_string(int codec_type);
 #ifdef __cplusplus
 }
 #endif /* extern "C" */

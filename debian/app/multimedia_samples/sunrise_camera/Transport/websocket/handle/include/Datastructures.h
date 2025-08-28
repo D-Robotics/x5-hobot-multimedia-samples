@@ -1,17 +1,3 @@
-// Copyright (c) 2024，D-Robotics.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 /******************************************************************************
   Copyright (c) 2013 Morten Houmøller Nygaard - www.mortz.dk - admin@mortz.dk
 
@@ -118,15 +104,8 @@ typedef struct ws_client_n {
 	pthread_t thread_id;
 	ws_header *headers;
 	ws_message *message;
-	tsThread stream_thread;
-	int32_t stream_count; // 使能多少路码流
-	int32_t venc_chns_status; // 编码通道使能状态，对比的bit位为1，则说明使能了对应编码通道
-	shm_stream_t* shm_source[64]; // 支持传输多路码流
-	int32_t stream_chn[64]; // fShmSource 对应的编码通道号
-	struct ws_client_n *next;
 
-	int codec_type[64];
-	char *codec_type_string[64];
+	struct ws_client_n *next;
 } ws_client;
 
 typedef struct {

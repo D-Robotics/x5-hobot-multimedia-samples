@@ -1,0 +1,14 @@
+prefix=/home/hcy/code/third/webplayer/ffmpeg/../WasmVideoPlayer/dist
+exec_prefix=${prefix}
+libdir=/home/hcy/code/third/webplayer/ffmpeg/../WasmVideoPlayer/dist/lib
+includedir=/home/hcy/code/third/webplayer/ffmpeg/../WasmVideoPlayer/dist/include
+
+Name: libavutil
+Description: FFmpeg utility library
+Version: 59.57.100
+Requires: 
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavutil -lm -pthread -lX11
+Libs.private: 
+Cflags: -I${includedir}

@@ -40,6 +40,9 @@ static struct option const long_options[] = {
 
 static int create_and_run_vflow(pipe_contex_t *pipe_contex);
 static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count);
+int32_t hbn_deserial_create(deserial_config_t *des_config, deserial_handle_t *des_fd);
+int32_t hbn_deserial_attach_to_vin(deserial_handle_t des_fd, camera_des_link_t link, vpf_handle_t vin_fd);
+
 
 static void print_help() {
 	printf("Usage: get_isp_data [OPTIONS]\n");
@@ -62,6 +65,8 @@ static void command_help() {
 
 static int settle = -1;
 static uint32_t sensor_mode = 0; // 1: NORMAL_M; 2: DOL2_M; 6: SLAVE_M
+static uint32_t link_port = 0;
+static uint32_t sensor_type = 0;
 
 int main(int argc, char** argv) {
 	int ret = 0;
@@ -111,6 +116,10 @@ int main(int argc, char** argv) {
 					index,
 					vp_sensor_config_list[index]->sensor_name,
 					vp_sensor_config_list[index]->config_file);
+
+			sensor_type = pipe_contex[i].sensor_config->sensor_type;
+			if(sensor_type != SENSOR_TYPE_NORMAL)
+				continue;
 			ret = vp_sensor_fixed_mipi_host(pipe_contex[i].sensor_config, &pipe_contex[i].csi_config);
 			if (ret != 0) {
 				printf("No Camera Sensor found. Please check if the specified "
@@ -175,12 +184,36 @@ static int create_camera_node(pipe_contex_t *pipe_contex) {
 	return 0;
 }
 
+static int create_deserial_node(pipe_contex_t *pipe_contex) {
+
+	vp_sensor_config_t *sensor_config = NULL;
+	deserial_config_t *deserial_config = NULL;
+	deserial_handle_t *des_handle = NULL;
+
+	int32_t ret = 0;
+	des_handle = &pipe_contex->des_fd;
+
+	sensor_config = pipe_contex->sensor_config;
+	deserial_config = sensor_config->deserial_node_attr;
+
+	ret = hbn_deserial_create(deserial_config, des_handle);
+	if(ret != 0){
+		printf("hbn_deserial_create failed ret = %d\n", ret);
+		return ret;
+	}
+	printf("deserial_config:,%02x,%s, des_handle:%ld \n\r" ,deserial_config->addr,
+	deserial_config->name, *des_handle);
+	return 0;
+}
+
+
 static int create_vin_node(pipe_contex_t *pipe_contex) {
 	vp_sensor_config_t *sensor_config = NULL;
 	vin_node_attr_t *vin_node_attr = NULL;
 	vin_ichn_attr_t *vin_ichn_attr = NULL;
 	vin_ochn_attr_t *vin_ochn_attr = NULL;
 	hbn_vnode_handle_t *vin_node_handle = NULL;
+	hbn_buf_alloc_attr_t alloc_attr = {0};
 	vin_attr_ex_t vin_attr_ex;
 	uint32_t hw_id = 0;
 	int32_t ret = 0;
@@ -194,9 +227,10 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 	vin_ochn_attr = sensor_config->vin_ochn_attr;
 	hw_id = vin_node_attr->cim_attr.mipi_rx;
 	vin_node_handle = &pipe_contex->vin_node_handle;
+	link_port = vin_node_attr->cim_attr.vc_index;
 
 	if(pipe_contex->csi_config.mclk_is_not_configed){
-		//设备树中没有配置mclk：使用外部晶振
+		// 设备树中没有配置 mclk：使用外部晶振
 		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
 			pipe_contex->csi_config.index);
 	}else{
@@ -226,6 +260,19 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 			/*we need to set hbn_vnode_set_attr_ex in a loop*/
 			ret = hbn_vnode_set_attr_ex(*vin_node_handle, &vin_attr_ex);
 			ERR_CON_EQ(ret, 0);
+		}
+	}
+	if(vin_ochn_attr->ddr_en)
+	{
+		memset(&alloc_attr, 0, sizeof(hbn_buf_alloc_attr_t));
+		alloc_attr.buffers_num = 6;
+		alloc_attr.is_contig = 1;
+		alloc_attr.flags =
+			HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
+		ret = hbn_vnode_set_ochn_buf_attr(*vin_node_handle, ochn_id, &alloc_attr);
+		if (ret < 0) {
+			printf("hbn_vnode_set_ochn_buf_attr fail ret %d\n", ret);
+			return ret;
 		}
 	}
 
@@ -273,7 +320,7 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 	int32_t ret = 0;
 
-	// 创建pipeline中的每个node
+	// 创建 pipeline 中的每个 node
 	ret = create_camera_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
 	ret = create_vin_node(pipe_contex);
@@ -281,7 +328,7 @@ int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 	ret = create_isp_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
 
-	// 创建HBN flow
+	// 创建 HBN flow
 	ret = hbn_vflow_create(&pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
@@ -296,9 +343,22 @@ int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 							pipe_contex->isp_node_handle,
 							0);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_camera_attach_to_vin(pipe_contex->cam_fd,
+
+	if(sensor_type != SENSOR_TYPE_NORMAL) {
+		ret = create_deserial_node(pipe_contex);
+		ERR_CON_EQ(ret, 0);
+		ret = hbn_camera_attach_to_deserial(pipe_contex->cam_fd, pipe_contex->des_fd, link_port);
+		ERR_CON_EQ(ret, 0);
+		ret = hbn_deserial_attach_to_vin(pipe_contex->des_fd, link_port, pipe_contex->vin_node_handle);
+		ERR_CON_EQ(ret, 0);
+	}
+	else
+	{
+		ret = hbn_camera_attach_to_vin(pipe_contex->cam_fd,
 							pipe_contex->vin_node_handle);
-	ERR_CON_EQ(ret, 0);
+		ERR_CON_EQ(ret, 0);
+	}
+
 	ret = hbn_vflow_start(pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);
 
@@ -312,7 +372,7 @@ void isp_dump_func(hbn_vnode_handle_t isp_node_handle) {
 	uint32_t timeout = 10000;
 	hbn_vnode_image_t out_img;
 
-	// 调用hbn_vnode_getframe获取帧数据
+	// 调用 hbn_vnode_getframe 获取帧数据
 	ret = hbn_vnode_getframe(isp_node_handle, ochn_id, timeout, &out_img);
 	if (ret != 0) {
 		printf("hbn_vnode_getframe from isp chn:%d failed(%d)\n", ochn_id, ret);

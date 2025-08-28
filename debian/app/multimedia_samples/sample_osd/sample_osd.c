@@ -40,6 +40,7 @@ enum work_mode_type {
 	cover_test = 1,
 	draw_word_test,
 	draw_line_test,
+	mosaic_test,
 } work_mode_type_e;
 
 void vp_vin_print_hbn_frame_info_t(const hbn_frame_info_t *frame_info);
@@ -417,6 +418,52 @@ static int32_t rgn_draw_line_deinit(int32_t vse_vnode_fd)
 	return 0;
 }
 
+static int32_t rgn_mosaic_test_init(int32_t vse_vnode_fd)
+{
+	int32_t i, ret;
+	hbn_rgn_handle_t rgn_handle;
+	hbn_rgn_attr_t region_rectangle;
+	hbn_rgn_chn_attr_t rgn_chn = {0};
+
+	memset(&region_rectangle, 0, sizeof(hbn_rgn_attr_t));
+
+	region_rectangle.type = MOSAIC_RGN;
+	region_rectangle.mosaic_chn.size.width = 400;
+	region_rectangle.mosaic_chn.size.height = 200;
+
+	for (i = 0; i < 6; i++) {
+		rgn_handle = i;
+		ret = hbn_rgn_create(rgn_handle, &region_rectangle);
+		ERR_CON_EQ(ret, 0);
+	}
+
+	rgn_chn.show = true; // 是否显示
+	rgn_chn.invert_en = 0;
+	rgn_chn.display_level = 1;
+	rgn_chn.point.x = 100; // 坐标信息
+	rgn_chn.point.y = 100;
+
+	for (i = 0; i < 6; i++) {
+		rgn_handle = i;
+		ret = hbn_rgn_attach_to_chn(rgn_handle, vse_vnode_fd, i, &rgn_chn);
+		ERR_CON_EQ(ret, 0);
+	}
+
+	return 0;
+}
+
+static void rgn_mosaic_test_deinit(int32_t vse_vnode_fd)
+{
+	int32_t i;
+	hbn_rgn_handle_t rgn_handle;
+
+	for (i = 0; i < 6; i++) {
+		rgn_handle = i;
+		hbn_rgn_detach_from_chn(rgn_handle, vse_vnode_fd, i);
+		hbn_rgn_destroy(rgn_handle);
+	}
+}
+
 static int32_t rgn_test_init(int32_t vse_vnode_fd, int32_t mode)
 {
 	int32_t ret = 0;
@@ -430,6 +477,9 @@ static int32_t rgn_test_init(int32_t vse_vnode_fd, int32_t mode)
 		break;
 	case draw_line_test:
 		ret = rgn_draw_line_init(vse_vnode_fd);
+		break;
+	case mosaic_test:
+		ret = rgn_mosaic_test_init(vse_vnode_fd);
 		break;
 	default:
 		ret = -1;
@@ -450,6 +500,9 @@ static void rgn_test_deinit(int32_t vse_vnode_fd, int32_t mode)
 		break;
 	case draw_line_test:
 		rgn_draw_line_deinit(vse_vnode_fd);
+		break;
+	case mosaic_test:
+		rgn_mosaic_test_deinit(vse_vnode_fd);
 		break;
 	default:
 		break;
@@ -660,7 +713,7 @@ static void print_help() {
 	printf("-i, --input_file FILE\t\tSpecify the input file\n");
 	printf("-w, --input_width WIDTH\t\tSpecify the input width\n");
 	printf("-h, --input_height HEIGHT\tSpecify the input height\n");
-	printf("-m, --work_mode\t\t\t1.cover_test 2.draw_word_test 3.draw_line_test\n");
+	printf("-m, --work_mode\t\t\t1.cover_test 2.draw_word_test 3.draw_line_test 4.mosaic_test\n");
 	printf("-f, --feedback \t\t\tSpecify feedback mode\n");
 }
 

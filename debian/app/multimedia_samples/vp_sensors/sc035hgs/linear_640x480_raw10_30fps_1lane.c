@@ -1,17 +1,3 @@
-// Copyright (c) 2024，D-Robotics.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 #include "vp_sensors.h"
 
 #define SENSOR_WIDTH  640
@@ -155,8 +141,8 @@ static isp_ochn_attr_t sc035hgs_isp_ochn_attr = {
 };
 
 vp_sensor_config_t sc035hgs_linear_640x480_raw10_30fps_1lane = {
-	.chip_id_reg = 0x3107,
-	.chip_id = 0x005A,
+	.chip_id_reg = 0x3108,
+	.chip_id = 0x31,
 	.sensor_name = "sc035hgs",
 	.config_file = "linear_640x480_raw10_30fps_1lane.c",
 	.camera_config = &sc035hgs_camera_config,

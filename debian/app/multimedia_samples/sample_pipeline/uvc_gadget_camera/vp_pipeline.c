@@ -1,5 +1,10 @@
 #include"vp_pipeline.h"
 
+static uint32_t link_port = 0;
+
+int32_t hbn_deserial_create(deserial_config_t *des_config, deserial_handle_t *des_fd);
+int32_t hbn_deserial_attach_to_vin(deserial_handle_t des_fd, camera_des_link_t link, vpf_handle_t vin_fd);
+
 static int create_camera_node(pipe_contex_t *pipe_contex, uint32_t sensor_mode)
 {
 	camera_config_t *camera_config = NULL;
@@ -15,6 +20,28 @@ static int create_camera_node(pipe_contex_t *pipe_contex, uint32_t sensor_mode)
 	ret = hbn_camera_create(camera_config, &pipe_contex->cam_fd);
 	ERR_CON_EQ(ret, 0);
 
+	return 0;
+}
+
+static int create_deserial_node(pipe_contex_t *pipe_contex) {
+
+	vp_sensor_config_t *sensor_config = NULL;
+	deserial_config_t *deserial_config = NULL;
+	deserial_handle_t *des_handle = NULL;
+
+	int32_t ret = 0;
+	des_handle = &pipe_contex->des_fd;
+
+	sensor_config = pipe_contex->sensor_config;
+	deserial_config = sensor_config->deserial_node_attr;
+
+	ret = hbn_deserial_create(deserial_config, des_handle);
+	if(ret != 0){
+		printf("hbn_deserial_create failed ret = %d\n", ret);
+		return ret;
+	}
+	printf("deserial_config:%02x_%s, des_handle:%ld \n\r" ,deserial_config->addr,
+	deserial_config->name, *des_handle);
 	return 0;
 }
 
@@ -39,14 +66,15 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	// vin_node_attr->cim_attr.mipi_rx = active_mipi_host;
 	hw_id = vin_node_attr->cim_attr.mipi_rx;
 	vin_node_handle = &pipe_contex->vin_node_handle;
-
+	link_port = vin_node_attr->cim_attr.vc_index;
 	if(pipe_contex->csi_config.mclk_is_not_configed){
-		//设备树中没有配置mclk：使用外部晶振
+		// 设备树中没有配置 mclk：使用外部晶振
 		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
 			pipe_contex->csi_config.index);
 	}else{
 		vin_attr_ex.vin_attr_ex_mask = sensor_config->vin_attr_ex->vin_attr_ex_mask;
 		vin_attr_ex.mclk_ex_attr.mclk_freq = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
+		vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
 	}
 
 	ret = hbn_vnode_open(HB_VIN, hw_id, AUTO_ALLOC_ID, vin_node_handle);
@@ -60,7 +88,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	// 设置输出通道的属性
 	ret = hbn_vnode_set_ochn_attr(*vin_node_handle, ochn_id, vin_ochn_attr);
 	ERR_CON_EQ(ret, 0);
-	vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
+
 	if (vin_attr_ex_mask) {
 		for (uint8_t i = 0; i < VIN_ATTR_EX_INVALID; i ++) {
 			if ((vin_attr_ex_mask & (1 << i)) == 0)
@@ -191,7 +219,7 @@ int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t*
 {
 	int32_t ret = 0;
 
-	// 创建pipeline中的每个node
+	// 创建 pipeline 中的每个 node
 	ret = create_camera_node(pipe_contex, vp_pipeline_info->sensor_mode);
 	ERR_CON_EQ(ret, 0);
 	ret = create_vin_node(pipe_contex, vp_pipeline_info->active_mipi_host);
@@ -202,7 +230,7 @@ int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t*
 		vp_pipeline_info->vse_bind_index, &(vp_pipeline_info->camera_config_info));
 	ERR_CON_EQ(ret, 0);
 
-	// 创建HBN flow
+	// 创建 HBN flow
 	ret = hbn_vflow_create(&pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
@@ -227,8 +255,19 @@ int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t*
 							0);
 	ERR_CON_EQ(ret, 0);
 
-	ret = hbn_camera_attach_to_vin(pipe_contex->cam_fd,
+	if(vp_pipeline_info->sensor_type != SENSOR_TYPE_NORMAL){
+		ret = create_deserial_node(pipe_contex);
+		ERR_CON_EQ(ret, 0);
+		ret = hbn_camera_attach_to_deserial(pipe_contex->cam_fd, pipe_contex->des_fd, link_port);
+		ERR_CON_EQ(ret, 0);
+		ret = hbn_deserial_attach_to_vin(pipe_contex->des_fd, link_port, pipe_contex->vin_node_handle);
+		ERR_CON_EQ(ret, 0);
+	}else {
+		ret = hbn_camera_attach_to_vin(pipe_contex->cam_fd,
 							pipe_contex->vin_node_handle);
+		ERR_CON_EQ(ret, 0);
+	}
+
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_start(pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);

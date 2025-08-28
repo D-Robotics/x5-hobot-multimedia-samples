@@ -1,11 +1,21 @@
 {
         "log_level": 0,
-        "config_num": 1,
+        "config_num": 2,
         "config_num_max":256,
         "config_0": {
                 "name": "cpu2dsp_ins2ch0",
                 "instance": 2,
                 "channel": 0,
+                "pkg_size_max": 4096,
+                "fifo_size": 64000,
+                "fifo_type": 0,
+                "ipcf_dev_path":"/dev/ipcdrv",
+                "ipcf_dev_name":"ipcdrv"
+        },
+        "config_1": {
+                "name": "cpu2dsp_ins2ch1",
+                "instance": 2,
+                "channel": 1,
                 "pkg_size_max": 4096,
                 "fifo_size": 64000,
                 "fifo_type": 0,

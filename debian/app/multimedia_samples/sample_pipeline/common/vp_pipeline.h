@@ -23,11 +23,14 @@
 
 #define PILELINE_OUT_BUFFER_COUNT 5
 #define PILELINE_OUT_BUFFER_RELEASE_COUNT 2
+#define MAX_PIPE_NUM 4
+
 typedef struct vp_pipeline_info_s {
 	int channel;
     int active_mipi_host;
     int vse_bind_index;
     int sensor_mode;
+	int sensor_type;
 	int enable_gdc;
 	int enable_vse;
 	int enable_online;
@@ -35,9 +38,15 @@ typedef struct vp_pipeline_info_s {
     camera_config_info_t camera_config_info;
 }vp_pipeline_info_t;
 
-int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t* vp_pipeline_info);
+typedef struct {
+    pipe_contex_t *pipe_contexts;
+} pipeline_info_t;
+
+int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t* vp_pipeline_info, int index);
 int vp_destroy_and_stop_pipeline(pipe_contex_t *pipe_contex);
 int vp_get_vse_channel(int input_width, int input_height, int output_width, int output_height);
+int create_serdes_fd_and_attach(pipeline_info_t *pipeline_info, int sensor_count);
+int32_t vflow_fd_start(pipe_contex_t *pipe_contex);
 
 const char *vp_gdc_get_bin_file(const char *sensor_name);
 

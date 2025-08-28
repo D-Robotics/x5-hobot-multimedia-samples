@@ -10,6 +10,7 @@ typedef struct vp_pipeline_info_s {
     int active_mipi_host;
     int vse_bind_index;
     int sensor_mode;
+    int sensor_type;
     camera_config_info_t camera_config_info;
 }vp_pipeline_info_t;
 

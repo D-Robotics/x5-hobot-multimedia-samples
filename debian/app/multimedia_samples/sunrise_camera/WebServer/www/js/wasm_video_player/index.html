@@ -1,0 +1,54 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>WASM TEST</title>
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-touch-fullscreen" content="yes" />
+    <meta name="format-detection" content="telephone=no, email=no" />
+    <link rel="stylesheet" href="styles/style.css">
+</head>
+
+<body>
+	<div class="parent-container"> <!-- 父容器，按需设定比例或动态大小 -->
+		<div class="video-container" id="videoPlayer">
+			<canvas id="playCanvas"></canvas>
+		</div>
+	</div>
+
+
+    <div id="footer">Copyright &copy; 2019 sonysuqin.All rights reserved.</div>
+	<script type='text/javascript' src="webgl.js"></script>
+	<script type='text/javascript' src="DecoderCmd.js"></script>
+	<script type='text/javascript' src="LiveStreamPullerCmd.js"></script>
+    <script type="module" src="WasmVideoPlayer.js"></script>
+	<script type='module'>
+		// 1. 导入模块
+		import WasmVideoPlayer from './WasmVideoPlayer.js';
+
+		// 2. 常量定义
+		const canvasId = "playCanvas";
+		const wsUrl = "ws://192.168.1.10:8080/ch0/main.live.mp4";
+
+		// 3. 初始化播放器
+		self.player = new WasmVideoPlayer(wsUrl, canvasId, "hevc");
+
+
+
+		// 5. 回调配置
+		const userCallbacks = {};
+		// 6. 播放控制
+		function playVideo() {
+			self.player.init(userCallbacks);  // 传入回调配置
+			self.player.start();
+		}
+
+		// 7. 启动逻辑
+		window.addEventListener('load', () => {
+			playVideo();
+		});
+	</script>
+
+</body>
+</html>

@@ -131,6 +131,23 @@ static void print_connector_info(int drm_fd) {
 	drmModeFreeResources(resources);
 }
 
+static float __mode_vrefresh(drmModeModeInfo *mode)
+{
+	unsigned int num, den;
+
+	num = mode->clock;
+	den = mode->htotal * mode->vtotal;
+
+	if (mode->flags & DRM_MODE_FLAG_INTERLACE)
+		num *= 2;
+	if (mode->flags & DRM_MODE_FLAG_DBLSCAN)
+		den *= 2;
+	if (mode->vscan > 1)
+		den *= mode->vscan;
+
+	return num * 1000.00 / den;
+}
+
 static int drm_setup_kms(vp_drm_context_t *ctx)
 {
 
@@ -160,13 +177,19 @@ static int drm_setup_kms(vp_drm_context_t *ctx)
 		return -1;
 	}
 
+	float fps = 30.0;
 	drmModeModeInfo *mode = NULL;
 	for (int i = 0; i < connector->count_modes; i++)
 	{
-		if (connector->modes[i].hdisplay == ctx->width && connector->modes[i].vdisplay == ctx->height)
+		if (connector->modes[i].hdisplay == ctx->width && connector->modes[i].vdisplay == ctx->height && !(connector->modes[i].flags & DRM_MODE_FLAG_INTERLACE))
 		{
 			mode = &connector->modes[i];
-			break;
+			fps = __mode_vrefresh(mode);
+			printf("fps:%f\n", fps);
+			if((fps <= 31.00) && (fps >= 28.00)){
+				printf("select %f\n", fps);
+				break;
+			}
 		}
 	}
 
@@ -318,7 +341,7 @@ static drmModeConnector* find_connector(int fd)
 static void drm_init_config(vp_drm_context_t *drm_ctx, int32_t width, int32_t height)
 {
 	memset(drm_ctx, 0, sizeof(vp_drm_context_t));
-	drm_ctx->crtc_id = 31;
+	drm_ctx->crtc_id = 63;
 	drm_ctx->connector_id = 117;
 	drm_ctx->width = width;
 	drm_ctx->height = height;
@@ -327,7 +350,7 @@ static void drm_init_config(vp_drm_context_t *drm_ctx, int32_t width, int32_t he
 
 	for (int i = 0; i < drm_ctx->plane_count; i++)
 	{
-		drm_ctx->planes[i].plane_id = 33;
+		drm_ctx->planes[i].plane_id = 64;
 		drm_ctx->planes[i].src_w = width;
 		drm_ctx->planes[i].src_h = height;
 		drm_ctx->planes[i].crtc_x = 0;

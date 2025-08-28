@@ -82,7 +82,49 @@ void vp_free_image_frame(ImageFrame *image_frame)
 		image_frame->hbn_vnode_image = NULL;
 	}
 }
+int execute_command(const char *command, char *output, size_t max_size) {
+	if (command == NULL || output == NULL || max_size == 0) {
+		errno = EINVAL;
+		return -1;
+	}
 
+	FILE *fp = popen(command, "r");
+	if (fp == NULL) {
+		perror("popen failed");
+		return -1;
+	}
+
+	size_t total_bytes = 0;
+	char buffer[1024];
+
+	// 逐行读取命令输出
+	while (fgets(buffer, sizeof(buffer), fp) != NULL) {
+		size_t len = strlen(buffer);
+		if (total_bytes + len >= max_size) {
+			fprintf(stderr, "Output buffer is too small\n");
+			pclose(fp);
+			errno = ENOMEM;
+			return -1;
+		}
+		memcpy(output + total_bytes, buffer, len);
+		total_bytes += len;
+	}
+
+	// 添加字符串结束符
+	if (total_bytes < max_size) {
+		output[total_bytes] = '\0';
+	} else {
+		output[max_size - 1] = '\0';
+	}
+
+	int status = pclose(fp);
+	if (status == -1) {
+		perror("pclose failed");
+		return -1;
+	}
+
+	return WEXITSTATUS(status);  // 返回命令退出状态码
+}
 
 // 获取主芯片类型
 static int32_t vp_get_chip_type(char *chip_type)
@@ -151,14 +193,23 @@ void vp_print_debug_infos(void)
 }
 void vp_print_debug_infos_when_error(void)
 {
+	printf("\n\n================= System Info Start ====================\n");
 	print_file("/sys/class/vps/flow/fmgr_stats");
 	print_file("/proc/interrupts");
+	char output[4096];
+	int status = execute_command("hrut_somstatus -n 1", output, sizeof(output));
+	if (status == 0) {
+		printf("hrut_somstatus:\n[%s]\n", output);
+	} else {
+		printf("hrut_somstatus failed: %d\n", status);
+	}
 
-	printf("sleep 5\n");
-	sleep(5);
+	printf("sleep 1s ...");
+	sleep(1);
+
 	print_file("/sys/class/vps/flow/fmgr_stats");
 	print_file("/proc/interrupts");
-
+	printf("================= System Info end ====================\n\n");
 }
 void vp_normal_buf_info_print(ImageFrame *frame)
 {

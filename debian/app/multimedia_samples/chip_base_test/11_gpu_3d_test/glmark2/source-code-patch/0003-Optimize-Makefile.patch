@@ -1,0 +1,181 @@
+From a8f18c5c023e82a538e16bf67dc9585a72f8a3d2 Mon Sep 17 00:00:00 2001
+From: "chengyu.he" <chengyu.he@horizon.cc>
+Date: Tue, 11 Feb 2025 17:40:37 +0800
+Subject: [PATCH 3/3] Optimize Makefile
+
+Signed-off-by: chengyu.he <chengyu.he@horizon.cc>
+---
+ src/Makefile              | 34 ++++++---------
+ src/Makefile-single-build | 90 +++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 102 insertions(+), 22 deletions(-)
+ create mode 100644 src/Makefile-single-build
+
+diff --git a/src/Makefile b/src/Makefile
+index 2f64701..6b61b8d 100644
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -1,31 +1,16 @@
+-CROSS_COMPILE ?= /opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-
+-
+-CC = ${CROSS_COMPILE}gcc
+-CXX = ${CROSS_COMPILE}g++
+-AR = ${CROSS_COMPILE}ar
+-AS = ${CROSS_COMPILE}as
+-LD = ${CROSS_COMPILE}ld
+-
+-STRIP = ${CROSS_COMPILE}strip
+-RANLIB = ${CROSS_COMPILE}ranlib
+-OBJCOPY = ${CROSS_COMPILE}objcopy
+-OBJDUMP = ${CROSS_COMPILE}objdump
+-READELF = ${CROSS_COMPILE}readelf
+-NM = ${CROSS_COMPILE}nm
++include ../../../../../Makefile.in
+ 
+ ARFLAG = -rcs
+ 
+-USR_INC = /home/hcy/code/x5/out/deploy/system/usr/
+-USR_INC2 = /home/hcy/code/x5/out/build/hbre_deps/
++INSTALL_DIR = ../../../glmark2/
++USR_INC = ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/
++USR_INC2 = ${HR_BUILD_OUTPUT_DIR}/build/hbre_deps/
+ 
+ MODULE_SELECT=drm-glesv2
+-#MODULE_SELECT=wayland-glesv2
+-
+-
+ 
+ #CFLAGS = -g -O0 -march=armv7-a -marm -mfpu=neon -mfloat-abi=hard
+ CFLAGS = -g -O0
+-CLIBS = -L/home/hcy/code/x5/out/build/hbre_deps/usr/lib -L/home/hcy/code/x5/out/deploy/system/usr/lib  -L./libmatrix/ -lmatrix -lpng   -lz -L./glad -lglad -L./libjpeg-turbo -ljpeg-turbo -lm -ldl -lrt
++CLIBS = -L${HR_BUILD_OUTPUT_DIR}/build/hbre_deps/usr/lib -L${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/lib  -L./libmatrix/ -lmatrix -lpng   -lz -L./glad -lglad -L./libjpeg-turbo -ljpeg-turbo -lm -ldl -lrt
+ INCLUDE_DIRS = -I$(USR_INC)/include/ -I./ -I$(USR_INC2)/include/ -I./include -I./glad/include -I./scene-terrain -I./scene-ideas -I./libmatrix  -I./libjpeg-turbo
+ # SUBDIRS = ./libmatrix ./zlib ./libpng ./glad ./libjpeg-turbo
+ SUBDIRS = ./libmatrix  ./glad ./libjpeg-turbo
+@@ -35,13 +20,13 @@ SOURCES = $(wildcard ./*.cpp ./scene-terrain/*.cpp ./scene-ideas/*.cpp)
+ 
+ ifeq ($(MODULE_SELECT), drm-gl)
+ 	CLIBS += -ldrm -lgbm -ludev
+-	CFLAGS += -DGLMARK2_USE_DRM -DGLMARK2_USE_GL -DGLMARK2_USE_EGL -D__GBM__
++	CFLAGS += -DGLMARK2_USE_DRM -DGLMARK2_USE_GL -DGLMARK2_USE_EGL
+ 	INCLUDE_DIRS += -I$(USR_INC)/include/EGL \
+ 			-I$(USR_INC)/include/drm \
+ 			-I$(USR_INC)/include/gbm
+ else ifeq ($(MODULE_SELECT), drm-glesv2)
+ 	CLIBS += -ldrm -lgbm -ludev -lGLESv2 -lGLSLC -lGAL -lVSC -lEGL -lgbm -lgbm_viv -lVDK -lm
+-	CFLAGS += -DGLMARK2_USE_DRM -DGLMARK2_USE_GLESv2 -DGLMARK2_USE_EGL -D__GBM__ -DGLMARK_VERSION="\"2023.01\"" -DGLMARK_DATA_PATH=""
++	CFLAGS += -DGLMARK2_USE_DRM -DGLMARK2_USE_GLESv2 -DGLMARK2_USE_EGL -DGLMARK_VERSION="\"2023.01\"" -DGLMARK_DATA_PATH="\"../data\""
+ 	INCLUDE_DIRS += -I$(USR_INC2)/include/EGL \
+ 			-I$(USR_INC2)/include/GLES2 \
+ 			-I$(USR_INC)/include/libdrm \
+@@ -77,6 +62,11 @@ $(OBJECTS) : %.o : %.cpp $(SUBDIRS)
+ $(SUBDIRS):ECHO
+ 	+$(MAKE) -C $@
+ 
++install:$(TARGET)
++	mkdir -p $(INSTALL_DIR)/bin/
++	install -m 0755 $(TARGET) $(INSTALL_DIR)/bin/$(TARGET)
++	cp -af ../data $(INSTALL_DIR)
++
+ ECHO:
+ 	@echo $(SUBDIRS)
+ 	@echo begin compile
+diff --git a/src/Makefile-single-build b/src/Makefile-single-build
+new file mode 100644
+index 0000000..2ee2e2a
+--- /dev/null
++++ b/src/Makefile-single-build
+@@ -0,0 +1,90 @@
++CROSS_COMPILE ?= /opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-
++
++CC = ${CROSS_COMPILE}gcc
++CXX = ${CROSS_COMPILE}g++
++AR = ${CROSS_COMPILE}ar
++AS = ${CROSS_COMPILE}as
++LD = ${CROSS_COMPILE}ld
++
++STRIP = ${CROSS_COMPILE}strip
++RANLIB = ${CROSS_COMPILE}ranlib
++OBJCOPY = ${CROSS_COMPILE}objcopy
++OBJDUMP = ${CROSS_COMPILE}objdump
++READELF = ${CROSS_COMPILE}readelf
++NM = ${CROSS_COMPILE}nm
++
++ARFLAG = -rcs
++
++USR_INC = /home/hcy/code/x5/out/deploy/system/usr/
++USR_INC2 = /home/hcy/code/x5/out/build/hbre_deps/
++
++MODULE_SELECT=drm-glesv2
++#MODULE_SELECT=wayland-glesv2
++
++
++
++#CFLAGS = -g -O0 -march=armv7-a -marm -mfpu=neon -mfloat-abi=hard
++CFLAGS = -g -O0
++CLIBS = -L/home/hcy/code/x5/out/build/hbre_deps/usr/lib -L/home/hcy/code/x5/out/deploy/system/usr/lib  -L./libmatrix/ -lmatrix -lpng   -lz -L./glad -lglad -L./libjpeg-turbo -ljpeg-turbo -lm -ldl -lrt
++INCLUDE_DIRS = -I$(USR_INC)/include/ -I./ -I$(USR_INC2)/include/ -I./include -I./glad/include -I./scene-terrain -I./scene-ideas -I./libmatrix  -I./libjpeg-turbo
++# SUBDIRS = ./libmatrix ./zlib ./libpng ./glad ./libjpeg-turbo
++SUBDIRS = ./libmatrix  ./glad ./libjpeg-turbo
++
++TARGET = glmark2
++SOURCES = $(wildcard ./*.cpp ./scene-terrain/*.cpp ./scene-ideas/*.cpp)
++
++ifeq ($(MODULE_SELECT), drm-gl)
++	CLIBS += -ldrm -lgbm -ludev
++	CFLAGS += -DGLMARK2_USE_DRM -DGLMARK2_USE_GL -DGLMARK2_USE_EGL
++	INCLUDE_DIRS += -I$(USR_INC)/include/EGL \
++			-I$(USR_INC)/include/drm \
++			-I$(USR_INC)/include/gbm
++else ifeq ($(MODULE_SELECT), drm-glesv2)
++	CLIBS += -ldrm -lgbm -ludev -lGLESv2 -lGLSLC -lGAL -lVSC -lEGL -lgbm -lgbm_viv -lVDK -lm
++	CFLAGS += -DGLMARK2_USE_DRM -DGLMARK2_USE_GLESv2 -DGLMARK2_USE_EGL -DGLMARK_VERSION="\"2023.01\"" -DGLMARK_DATA_PATH="\"../data\""
++	INCLUDE_DIRS += -I$(USR_INC2)/include/EGL \
++			-I$(USR_INC2)/include/GLES2 \
++			-I$(USR_INC)/include/libdrm \
++			-I$(USR_INC2)/include/gbm
++else ifeq ($(MODULE_SELECT), wayland-gl)
++	CLIBS += -lwayland-client -lwayland-server -L./xdc_shell -lxdc-shell -L./wayland-egl -lwayland-egl
++	CFLAGS += -DGLMARK2_USE_WAYLAND -DGLMARK2_USE_GL -DGLMARK2_USE_EGL
++	INCLUDE_DIRS += -I$(USR_INC)/include/EGL -I./xdc_shell
++	SUBDIRS += ./xdc_shell ./wayland-egl
++else ifeq ($(MODULE_SELECT), wayland-glesv2)
++	CLIBS += -lwayland-client -lwayland-server -L./xdc_shell -lxdc-shell -L./wayland-egl -lwayland-egl
++	CFLAGS += -DGLMARK2_USE_WAYLAND -DGLMARK2_USE_GLESv2 -DGLMARK2_USE_EGL
++	INCLUDE_DIRS += -I$(USR_INC)/include/EGL \
++			-I$(USR_INC)/include/GLES2 \
++			-I./xdc_shell
++	SUBDIRS += ./xdc_shell ./wayland-egl
++else
++	SOURCES +=
++endif
++
++export CC CXX CFLAGS AR ARFLAG MODULE_SELECT
++
++CPP_OBJECTS = $(patsubst %.cpp,%.o,$(SOURCES))
++
++OBJECTS = $(CPP_OBJECTS)
++
++$(TARGET) : $(OBJECTS)
++	$(CXX) $^ -o $@ $(CLIBS)
++
++$(OBJECTS) : %.o : %.cpp $(SUBDIRS)
++	$(CXX) -c $(CFLAGS) $< -o $@ $(INCLUDE_DIRS) $(CLIBS)
++
++$(SUBDIRS):ECHO
++	+$(MAKE) -C $@
++
++ECHO:
++	@echo $(SUBDIRS)
++	@echo begin compile
++
++.PHONY : clean
++clean:
++	for dir in $(SUBDIRS);\
++	do $(MAKE) -C $$dir clean||exit 1;\
++	done
++	rm -rf $(TARGET) $(OBJECTS) ./lib/*.a
++	rm -rf $(TARGET) $(OBJECTS) ./lib/*.o
+\ No newline at end of file
+-- 
+2.34.1
+

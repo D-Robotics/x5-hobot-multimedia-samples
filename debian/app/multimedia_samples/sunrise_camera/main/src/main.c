@@ -35,75 +35,7 @@
 #include "utils/exception_handling.h"
 #include "utils/utils_log.h"
 
-static int32_t _do_add_sms(int32_t channel)
-{
-	int32_t ret = 0;
-	T_SDK_VENC_INFO venc_chn_info;
-	// 从camera模块获取chn0的码流配置
-	venc_chn_info.channel = channel;
-	ret = SDK_Cmd_Impl(SDK_CMD_VPP_VENC_CHN_PARAM_GET, (void*)&venc_chn_info);
-	if(ret < 0)
-	{
-		SC_LOGE("SDK_Cmd_Impl: SDK_CMD_VPP_VENC_CHN_PARAM_GET Error, ERRCODE: %d", ret);
-		return -1;
-	}
-
-	SC_LOGI("venc chn %d id %s, type: %d, frameRate: %d\n", venc_chn_info.channel,
-		venc_chn_info.enable == 1 ? "enable" : "disable", venc_chn_info.type,
-		venc_chn_info.framerate);
-
-	T_SDK_RTSP_SRV_PARAM sms_param = { 0 };
-	int32_t type = venc_chn_info.type;
-	char *codec_type_string = "h264";
-
-
-	sms_param.audio.enable = 0;
-
-	sms_param.video.enable = 1;
-	if (type == 96){
-		sms_param.video.type = T_SDK_RTSP_VIDEO_TYPE_H264;
-		codec_type_string = "h264";
-	}else if(type == 265){
-		sms_param.video.type = T_SDK_RTSP_VIDEO_TYPE_H265;
-		codec_type_string = "h265";
-	}else if(type == 26){
-		sms_param.video.type = T_SDK_RTSP_VIDEO_TYPE_MJPEG;
-		codec_type_string = "jpeg";
-	}else{
-		SC_LOGE("not support codec type [%d],so use h264.", type);
-		codec_type_string = "h264";
-		sms_param.video.type = T_SDK_RTSP_VIDEO_TYPE_H264;
-	}
-
-	sprintf(sms_param.prefix, "stream_chn%d.%s", venc_chn_info.channel, codec_type_string);
-	sprintf(sms_param.shm_id, "rtsp_id_%s_chn%d", type == 96 ? "h264" :
-								(type == 265 ? "h265" :
-								(type == 26) ? "jpeg" : "other"), venc_chn_info.channel);
-	sprintf(sms_param.shm_name, "name_%s_chn%d", type == 96 ? "h264" :
-								(type == 265 ? "h265" :
-								(type == 26) ? "jpeg" : "other"), venc_chn_info.channel);
-
-	sms_param.stream_buf_size = venc_chn_info.stream_buf_size;
-	sms_param.video.framerate = venc_chn_info.framerate;
-
-	sms_param.suggest_buffer_item_count = venc_chn_info.suggest_buffer_item_count;
-	sms_param.suggest_buffer_region_size = venc_chn_info.suggest_buffer_region_size;
-
-	SC_LOGI("prefix: %s, port: %d, video_framerate: %d, shm_id: %s, shm_name: %s, stream_buf_size: %d, region size %d, item count %d.",
-		sms_param.prefix, sms_param.port,
-		sms_param.video.framerate,
-		sms_param.shm_id, sms_param.shm_name, sms_param.stream_buf_size,
-		sms_param.suggest_buffer_region_size, sms_param.suggest_buffer_item_count);
-
-	ret = SDK_Cmd_Impl(SDK_CMD_RTSP_SERVER_ADD_SMS, (void*)&sms_param);
-	if(ret < 0)
-	{
-		SC_LOGE("SDK_Cmd_Impl: SDK_CMD_RTSP_SERVER_START Error, ERRCODE: %d", ret);
-		return -1;
-	}
-	return ret;
-}
-
+static int g_signal_handler_is_processed = 0;
 
 int32_t module_init()
 {
@@ -171,6 +103,14 @@ int32_t module_init()
 		return -1;
 	}
 #endif
+#ifdef MODULE_MEDIA_SERVER
+	ret = SDK_Cmd_Impl(SDK_CMD_MEDIA_SERVER_INIT, "../config/media_server.ini");
+	if(ret < 0)
+	{
+		SC_LOGE("SDK_Cmd_Impl: SDK_CMD_MEDIA_SERVER_INIT Error, ERRCODE: %d", ret);
+		return -1;
+	}
+#endif
 
 	return ret;
 
@@ -178,7 +118,7 @@ int32_t module_init()
 
 int32_t module_start()
 {
-	int32_t i, ret;
+	int32_t ret;
 #ifdef MODULE_ALARM
 	ret = SDK_Cmd_Impl(SDK_CMD_ALARM_START, NULL);
 	if(ret < 0)
@@ -260,7 +200,7 @@ int32_t module_start()
 		uint32_t venc_chns_status = 0;
 		SDK_Cmd_Impl(SDK_CMD_VPP_GET_VENC_CHN_STATUS, (void*)&venc_chns_status);
 		SC_LOGI("venc_chns_status: %u", venc_chns_status);
-		for (i = 0; i < 32; i++) {
+		for (int i = 0; i < 32; i++) {
 			if (venc_chns_status & (1 << i))
 				_do_add_sms(i); // 给对应的编码数据建立rtsp推流sms
 		}
@@ -304,6 +244,15 @@ int32_t module_uninit()
 		}
 #endif
 
+#ifdef MODULE_MEDIA_SERVER
+	ret = SDK_Cmd_Impl(SDK_CMD_MEDIA_SERVER_UNINIT, NULL);
+	if(ret < 0)
+	{
+		SC_LOGE("SDK_Cmd_Impl: SDK_CMD_MEDIA_SERVER_UNINIT Error, ERRCODE: %d", ret);
+		return -1;
+	}
+#endif
+
 	return ret;
 
 }
@@ -340,7 +289,13 @@ int32_t module_stop()
 
 static void signal_handler(int32_t signal_number)
 {
-	SC_LOGI("stop and uninit modules");
+	if(!g_signal_handler_is_processed){
+		g_signal_handler_is_processed = 1;
+		SC_LOGI("Stopping and uninit all modules...");
+	}else{
+		SC_LOGI("Signal handler is already in progress; ignoring duplicate SIGINT (Ctrl+C) signal.");
+		return;
+	}
 	module_stop();
 	module_uninit();
 	// 退出程序
@@ -352,6 +307,7 @@ int32_t main(int32_t argc, char *argv[]) {
 
 	// 接收程序退出信号，完成模块 stop 和 uninit
 	signal(SIGINT, signal_handler);
+	signal(SIGPIPE, SIG_IGN);
 
 	// 注册程序异常奔溃时的处理
 	register_exception_signals();

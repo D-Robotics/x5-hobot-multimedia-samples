@@ -42,7 +42,7 @@ extern "C" {
 
 
 #define DRM_MAX_PLANES 3
-#define DRM_ION_MAX_BUFFERS 3
+#define DRM_ION_MAX_BUFFERS 10
 
 typedef struct
 {

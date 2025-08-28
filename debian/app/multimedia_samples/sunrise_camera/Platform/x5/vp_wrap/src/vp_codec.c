@@ -724,7 +724,7 @@ int32_t vp_codec_encoder_set_input(media_codec_context_t *context, ImageFrame *v
 	ret = hb_mm_mc_dequeue_input_buffer(context, &buffer, 2000);
 	if (ret != 0){
 		SC_LOGE("hb_mm_mc_dequeue_input_buffer failed ret = %d", ret);
-		return -1;
+		return -2;
 	}
 
 	int data_size = hbn_vnode_image->buffer.size[0];
@@ -868,7 +868,7 @@ int32_t vp_codec_get_output(media_codec_context_t *context, ImageFrame *frame, i
 	{
 		SC_LOGE("%s idx: %d, hb_mm_mc_dequeue_output_buffer failed ret = %d",
 			context->encoder ? "Encode" : "Decode", context->instance_index, ret);
-		return -1;
+		return -2;
 	}
 	// 如果是解码器，拿到的 buffer 类型不是视频帧，说明解码器还没有完全工作起来，则返回错误
 	if ((!context->encoder) && (buffer->type != MC_VIDEO_FRAME_BUFFER))
@@ -1284,4 +1284,18 @@ void vp_codec_print_media_codec_output_buffer_info(ImageFrame *frame)
 			printf("Unsupported Codec Buffer Type.\n");
 			break;
 	}
+}
+
+const char *vp_codec_get_codec_type_string(int codec_type){
+	switch(codec_type){
+		case MEDIA_CODEC_ID_H264:
+			return "h264";
+		case MEDIA_CODEC_ID_H265:
+			return "h265";
+		case MEDIA_CODEC_ID_JPEG:
+			return "jpeg";
+		default:
+			return "other";
+	}
+	return "other";
 }

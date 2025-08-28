@@ -38,7 +38,7 @@ typedef struct {
 	int select_sensor_id;
 	uint32_t sensor_mode;
 	pipe_contex_t pipe_contexts;
-	int active_mipi_host; // 根据实际的硬件连接情况确定使用对应的mipi host
+	int active_mipi_host; // 根据实际的硬件连接情况确定使用对应的 mipi host
 	int vse_bind_codec_chn;
 	char encode_type[32];
 	media_codec_context_t media_context;
@@ -49,10 +49,14 @@ typedef struct {
 static int32_t total_pipeline_num = 0;
 static int32_t verbose_flag = 0;
 static int32_t used_mipi_host = 0;
-
+static uint32_t sensor_type = 0;
+static uint32_t link_port[MAX_PIPE_NUM] = {};
 static int32_t running = 0;
 
 void *read_vse_data(void *contex);
+int32_t hbn_deserial_create(deserial_config_t *des_config, deserial_handle_t *des_fd);
+int32_t hbn_deserial_attach_to_vin(deserial_handle_t des_fd, camera_des_link_t link, vpf_handle_t vin_fd);
+
 // void *read_codec_data(void *context);
 
 static struct option const long_options[] = {
@@ -363,23 +367,27 @@ void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeli
 						sensor_idx,
 						vp_sensor_config_list[sensor_idx]->sensor_name,
 						vp_sensor_config_list[sensor_idx]->config_file);
+				sensor_type = pipeline_info->pipe_contexts.sensor_config->sensor_type;
+				printf("sensor_type:%d \n" , sensor_type);
 			} else {
 				printf("Unsupport sensor index:%d\n", sensor_idx);
 				print_help();
 				exit(0);
 			}
-			ret = vp_sensor_multi_fixed_mipi_host(pipeline_info->pipe_contexts.sensor_config, used_mipi_host,
-				&pipeline_info->pipe_contexts.csi_config);
-			if (ret < 0) {
-				printf("vp sensor fixed mipi host fail, sensor id %d."
-					"Maybe No Camera Sensor found. Please check if the specified "
-					"sensor is connected to the Camera interface.\n\n", sensor_idx);
-				exit(0);
+			//gmsl 模组需要初始化后才能检测到 addr
+			if(sensor_type == SENSOR_TYPE_NORMAL) {
+				ret = vp_sensor_multi_fixed_mipi_host(pipeline_info->pipe_contexts.sensor_config, used_mipi_host,
+													&pipeline_info->pipe_contexts.csi_config);
+				if (ret < 0) {
+					printf("vp sensor fixed mipi host fail, sensor id %d."
+						"Maybe No Camera Sensor found. Please check if the specified "
+						"sensor is connected to the Camera interface.\n\n", sensor_idx);
+					exit(0);
+				}
+				pipeline_info->select_sensor_id = sensor_idx;
+				pipeline_info->active_mipi_host = pipeline_info->pipe_contexts.sensor_config->vin_node_attr->cim_attr.mipi_rx;
+				used_mipi_host |= (1 << pipeline_info->pipe_contexts.sensor_config->vin_node_attr->cim_attr.mipi_rx);
 			}
-			pipeline_info->select_sensor_id = sensor_idx;
-			// active_mipi_host 的配置在create_vin_node函数中需要再配置一下
-			pipeline_info->active_mipi_host = pipeline_info->pipe_contexts.sensor_config->vin_node_attr->cim_attr.mipi_rx;
-			used_mipi_host |= (1 << pipeline_info->pipe_contexts.sensor_config->vin_node_attr->cim_attr.mipi_rx);
 		} else if (strcmp(key_value[0], "channel") == 0) {
 			if (!is_number(key_value[1])) {
 				fprintf(stderr, "Invalid channel ID: %s\n", key_value[1]);
@@ -422,6 +430,70 @@ void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeli
 	}
 }
 
+static int create_deserial_node(pipe_contex_t *pipe_contex) {
+
+	vp_sensor_config_t *sensor_config = NULL;
+	deserial_config_t *deserial_config = NULL;
+	deserial_handle_t *des_handle = NULL;
+
+	int32_t ret = 0;
+	des_handle = &pipe_contex->des_fd;
+
+	sensor_config = pipe_contex->sensor_config;
+	deserial_config = sensor_config->deserial_node_attr;
+
+	ret = hbn_deserial_create(deserial_config, des_handle);
+	if(ret != 0){
+		printf("hbn_deserial_create failed ret = %d\n", ret);
+		return ret;
+	}
+	if (verbose_flag) {
+		printf("deserial_config:%02x_%s, des_handle:%ld \n\r" ,deserial_config->addr,
+		deserial_config->name, *des_handle);
+	}
+	return 0;
+}
+
+
+int create_serdes_fd_and_attach(pipeline_info_t *pipeline_info, int sensor_count) {
+	int32_t ret = 0;
+	deserial_handle_t tdes[MAX_PIPE_NUM] = { 0 };
+
+	// 打印每个传入管道的信息
+	for (int i = 0; i < sensor_count; i++) {
+		printf("port_link[%d]: %d, cam_fd[%d]: %ld\n"
+		,i ,link_port[i], i, pipeline_info[i].pipe_contexts.cam_fd);
+	}
+
+	ret = create_deserial_node(&pipeline_info[0].pipe_contexts);
+	tdes[0] = pipeline_info[0].pipe_contexts.des_fd;
+	ERR_CON_EQ(ret, 0);
+
+	// 通过 camera 和 deserial 的 handle，选择对应的 link_port 将两者绑定，
+	for (int i = 0; i < sensor_count; i++) {
+		ret = hbn_camera_attach_to_deserial(pipeline_info[i].pipe_contexts.cam_fd, tdes[0], link_port[i]);
+		ERR_CON_EQ(ret, 0);
+	}
+
+	// 硬件上带有解串器，将 deserial 与 vin node 绑定，并初始化 gmsl 模组
+	for (int i = 0; i < sensor_count; i++) {
+		ret = hbn_deserial_attach_to_vin(tdes[0], link_port[i], pipeline_info[i].pipe_contexts.vin_node_handle);
+		ERR_CON_EQ(ret, 0);
+	}
+	return 0;
+}
+
+int32_t vflow_fd_start(pipe_contex_t *pipe_contex)
+{
+	int32_t ret = 0;
+
+	ret = hbn_vflow_start(pipe_contex->vflow_fd);
+	ERR_CON_EQ(ret, 0);
+	printf("hbn_vflow_start\n");
+	return 0;
+
+}
+
 static int create_camera_node(pipe_contex_t *pipe_contex, uint32_t sensor_mode)
 {
 	camera_config_t *camera_config = NULL;
@@ -440,7 +512,7 @@ static int create_camera_node(pipe_contex_t *pipe_contex, uint32_t sensor_mode)
 	return 0;
 }
 
-static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
+static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host, int index) {
 	vp_sensor_config_t *sensor_config = NULL;
 	vin_node_attr_t *vin_node_attr = NULL;
 	vin_ichn_attr_t *vin_ichn_attr = NULL;
@@ -462,8 +534,9 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	hw_id = vin_node_attr->cim_attr.mipi_rx;
 	vin_node_handle = &pipe_contex->vin_node_handle;
 
+	link_port[index] = vin_node_attr->cim_attr.vc_index;
 	if(pipe_contex->csi_config.mclk_is_not_configed){
-		//设备树中没有配置mclk：使用外部晶振
+		// 设备树中没有配置 mclk：使用外部晶振
 		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
 			pipe_contex->csi_config.index);
 	}else{
@@ -483,6 +556,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	// 设置输出通道的属性
 	ret = hbn_vnode_set_ochn_attr(*vin_node_handle, ochn_id, vin_ochn_attr);
 	ERR_CON_EQ(ret, 0);
+
 	if (vin_attr_ex_mask) {
 		for (uint8_t i = 0; i < VIN_ATTR_EX_INVALID; i ++) {
 			if ((vin_attr_ex_mask & (1 << i)) == 0)
@@ -596,21 +670,21 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index) {
 }
 
 static int create_and_run_vflow(pipe_contex_t *pipe_contex,
-	int active_mipi_host, int vse_bind_index, uint32_t sensor_mode)
+	int active_mipi_host, int vse_bind_index, uint32_t sensor_mode, int index)
 {
 	int32_t ret = 0;
 
-	// 创建pipeline中的每个node
+	// 创建 pipeline 中的每个 node
 	ret = create_camera_node(pipe_contex, sensor_mode);
 	ERR_CON_EQ(ret, 0);
-	ret = create_vin_node(pipe_contex, active_mipi_host);
+	ret = create_vin_node(pipe_contex, active_mipi_host, index);
 	ERR_CON_EQ(ret, 0);
 	ret = create_isp_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
 	ret = create_vse_node(pipe_contex, vse_bind_index);
 	ERR_CON_EQ(ret, 0);
 
-	// 创建HBN flow
+	// 创建 HBN flow
 	ret = hbn_vflow_create(&pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
@@ -634,6 +708,9 @@ static int create_and_run_vflow(pipe_contex_t *pipe_contex,
 							pipe_contex->vse_node_handle,
 							0);
 	ERR_CON_EQ(ret, 0);
+
+	if(sensor_type != SENSOR_TYPE_NORMAL)
+	return 0;
 
 	ret = hbn_camera_attach_to_vin(pipe_contex->cam_fd,
 							pipe_contex->vin_node_handle);
@@ -673,7 +750,7 @@ void *encode_vse_chn_data(void *context)
 	}
 
 	while (running) {
-		ret = hbn_vnode_getframe(vse_node_handle, pipeline_info->vse_bind_codec_chn, 1000, &vse_chn_frame);
+		ret = hbn_vnode_getframe(vse_node_handle, pipeline_info->vse_bind_codec_chn, 2000, &vse_chn_frame);
 		if (ret != 0) {
 			printf("hbn_vnode_getframe VSE channel %d failed, error code %d\n", 0, ret);
 			continue;
@@ -778,7 +855,8 @@ int main(int argc, char** argv) {
 		ret = create_and_run_vflow(&pipeline_info[index].pipe_contexts,
 			pipeline_info[index].active_mipi_host,
 			pipeline_info[index].vse_bind_codec_chn,
-			pipeline_info[index].sensor_mode);
+			pipeline_info[index].sensor_mode,
+			index);
 		if (ret != 0) {
 			for (int j = 0; j < index; j++) {
 				hbn_vflow_stop(pipeline_info[j].pipe_contexts.vflow_fd);
@@ -788,6 +866,23 @@ int main(int argc, char** argv) {
 		}
 		create_encodec(&pipeline_info[index], &pipeline_info[index].media_context);
 	}
+
+	if(sensor_type != SENSOR_TYPE_NORMAL) {
+		ret = create_serdes_fd_and_attach(pipeline_info, total_pipeline_num);
+		if (ret != 0) {
+			printf("camera_config_init_seq fail for sensor ret = %d\n", ret);
+			return ret;
+		}
+
+		for (int i = 0; i < total_pipeline_num; i++) {
+			ret = vflow_fd_start(&pipeline_info[i].pipe_contexts);
+			if (ret != 0) {
+				printf("vflow_fd_start fail for sensor ret = %d\n",  ret);
+				return ret;
+			}
+		}
+	}
+
 	running = 1;
 	for (index = 0; index < total_pipeline_num; index++) {
 		ret = pthread_create(&pipeline_info[index].read_codec_thread, NULL, (void *)encode_vse_chn_data,

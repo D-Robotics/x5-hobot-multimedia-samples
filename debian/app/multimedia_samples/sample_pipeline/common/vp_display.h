@@ -43,11 +43,21 @@ extern "C" {
 #define DRM_MAX_PLANES 3
 #define DRM_ION_MAX_BUFFERS 6
 
+#define VP_DEBUG_ENABLED 0   // 改成 0 就会关闭所有调试打印
+
+#if VP_DEBUG_ENABLED
+	#define VP_DEBUG(fmt, args...) \
+		fprintf(stderr, "[DEBUG] %s:%d: " fmt, __func__, __LINE__, ##args)
+#else
+	#define VP_DEBUG(fmt, args...)  /* no-op */
+#endif
 typedef struct
 {
 	int dma_buf_fd;
 	uint32_t fb_id;
-	UT_hash_handle hh; // uthash 处理器
+	uint32_t gem_handle;       // 添加 GEM handle
+	uint64_t last_used;        // 添加最后使用时间戳
+	UT_hash_handle hh; 			//uthash 处理器
 } dma_buf_map_t;
 
 typedef struct
@@ -80,6 +90,12 @@ typedef struct
 	dma_buf_map_t *buffer_map; // 使用哈希表
 	int buffer_count;
 	int max_buffers; // 动态调整 buffer_map 的大小
+
+	uint32_t front_fb_id;    // 当前显示的framebuffer
+	uint32_t back_fb_id;     // 准备中的framebuffer
+	bool back_ready;         // 后台buffer是否就绪
+	pthread_mutex_t buf_mutex; // 保护buffer交换的互斥锁
+	drmEventContext evctx;  // DRM事件上下文
 } vp_drm_context_t;
 
 int32_t vp_display_init(vp_drm_context_t *drm_ctx, int32_t width, int32_t height);
@@ -88,7 +104,7 @@ int32_t vp_display_set_frame(vp_drm_context_t *drm_ctx,
 	hb_mem_graphic_buf_t *image_frame);
 
 int32_t vp_display_wait_blank(vp_drm_context_t *drm_ctx);
-
+int32_t vp_display_wait_vsync(vp_drm_context_t *drm_ctx);
 int32_t vp_display_check_hdmi_is_connected();
 int32_t vp_display_get_max_resolution_if_not_match(int32_t width, int32_t height, int32_t *out_width, int32_t *out_height);
 #ifdef __cplusplus

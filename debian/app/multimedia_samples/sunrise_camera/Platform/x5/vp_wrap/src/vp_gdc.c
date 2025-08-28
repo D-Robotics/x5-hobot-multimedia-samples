@@ -53,7 +53,37 @@ static gdc_list_info_t g_gdc_list_info[] = {
         .sensor_name = "sc1330t",
         .gdc_file_name = "../gdc_bin/sc1330t_gdc.bin",
         .is_valid = -1
-    }
+	},
+	{
+		.sensor_name = "f37",
+		.gdc_file_name = "../gdc_bin/f37_gdc.bin",
+		.is_valid = -1
+	},
+	{
+		.sensor_name = "imx586",
+		.gdc_file_name = "../gdc_bin/imx586_gdc.bin",
+		.is_valid = -1
+	},
+	{
+		.sensor_name = "os08c10",
+		.gdc_file_name = "../gdc_bin/os08c10_gdc.bin",
+		.is_valid = -1
+	},
+	{
+		.sensor_name = "sc035hgs",
+		.gdc_file_name = "../gdc_bin/sc035hgs_gdc.bin",
+		.is_valid = -1
+	},
+	{
+		.sensor_name = "sc132gs",
+		.gdc_file_name = "../gdc_bin/sc132gs_1088X1280_gdc.bin",
+		.is_valid = -1
+	},
+	{
+		.sensor_name = "sc231ai",
+		.gdc_file_name = "../gdc_bin/sc231ai_gdc.bin",
+		.is_valid = -1
+	}
 };
 int get_gdc_config_file_size(const char *sensor_name){
     const char* gdc_bin_file = vp_gdc_get_bin_file(sensor_name);

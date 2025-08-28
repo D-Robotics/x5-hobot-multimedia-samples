@@ -672,6 +672,9 @@ int main(int argc, char** argv)
 		ERR_CON_EQ(ret, 0);
 		gdc_dump_images("/userdata/vse_gdc", 0, &gdc_info.output_image);
 
+		// 模拟业务处理耗时
+		sleep(10);
+
 		ret = feedback_vse_destory(&pipe_contex, &scaler_info,
 					BIT(channel), CAP_BUF_INTERNAL);
 		ERR_CON_EQ(ret, 0);
@@ -714,6 +717,9 @@ int main(int argc, char** argv)
 		ret = feedback_vse_create(&pipe_contex, &scaler_info,
 					VSE_ALL_CHN_MASK, flags.cap_buf_flag);
 		ERR_CON_EQ(ret, 0);
+
+		// 模拟业务处理耗时
+		sleep(10);
 
 		con.src_node.node_handle = pipe_contex.gdc_node_handle;
 		con.src_node.out_chn = channel;

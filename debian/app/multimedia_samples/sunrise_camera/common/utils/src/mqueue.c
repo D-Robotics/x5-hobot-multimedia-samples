@@ -166,7 +166,7 @@ teQueueStatus mQueueDequeueTimed(tsQueue *psQueue, uint32_t u32WaitTimeMil, void
 			sTimeout.tv_sec++;
 			sTimeout.tv_nsec -= 1000000000;
 		}
-		/*printf("Dequeue timed: now    %lu s, %lu ns\n", sNow.tv_sec, sNow.tv_usec * 1000);*/
+		/*printf("Dequeue timed: now	%lu s, %lu ns\n", sNow.tv_sec, sNow.tv_usec * 1000);*/
 		/*printf("Dequeue timed: until  %lu s, %lu ns\n", sTimeout.tv_sec, sTimeout.tv_nsec);*/
 
 		switch (pthread_cond_timedwait(&psQueue->cond_data_available, &psQueue->mutex, &sTimeout))
@@ -210,3 +210,18 @@ int mQueueIsFull(tsQueue *psQueue)
 	return 0;
 }
 
+uint32_t mQueueGetCount(tsQueue *psQueue)
+{
+	uint32_t count;
+
+	pthread_mutex_lock(&psQueue->mutex);
+
+	if (psQueue->u32Rear >= psQueue->u32Front) {
+		count = psQueue->u32Rear - psQueue->u32Front;
+	} else {
+		count = psQueue->u32Length - psQueue->u32Front + psQueue->u32Rear;
+	}
+
+	pthread_mutex_unlock(&psQueue->mutex);
+	return count;
+}

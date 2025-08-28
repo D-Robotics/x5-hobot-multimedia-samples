@@ -26,7 +26,7 @@ sdk:rel
 install:
 	@echo "Generate deployment package"
 	@mkdir -p out
-	@tar -czvf out/sunrise_camera_v3.1.0.tar.gz sunrise_camera WebServer start_app.sh
+	@tar -czvf out/sunrise_camera_v$(VERSION).tar.gz --exclude='sunrise_camera/lib/*.a' sunrise_camera start_app.sh
 
 cleansdk:
 	@rm -Rf $(shell find ${TARGET_DIR}/include -name *.h)

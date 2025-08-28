@@ -30,6 +30,7 @@ enum pipeline_thread_state_t{
 	E_THREAD_STOPPING,
 };
 
+
 typedef struct uvc_gadget_camera_contex_s
 {
 	camera_config_info_t camera_config_info;
@@ -98,7 +99,7 @@ void *pipeline_porcess_func(void *data){
 	while (uvc_gadget_camera_contex->pipeline_thread_state == E_THREAD_RUNNING)
 	{
 		//1. get one frame frome vse
-		ret = hbn_vnode_getframe(vse_node_handle, uvc_gadget_camera_contex->vse_bind_codec_chn, 1000, &vse_chn_frame);
+		ret = hbn_vnode_getframe(vse_node_handle, uvc_gadget_camera_contex->vse_bind_codec_chn, 2000, &vse_chn_frame);
 		if (ret != 0)
 		{
 			printf("hbn_vnode_getframe VSE channel %d failed, error code %d\n", 0, ret);
@@ -178,6 +179,7 @@ static int pipeline_process_start(uvc_gadget_camera_contex_t *uvc_gadget_camera_
 		.active_mipi_host = pipe_contex->csi_config.index,
 		.vse_bind_index = uvc_gadget_camera_contex->vse_bind_codec_chn,
 		.sensor_mode = uvc_gadget_camera_contex->sensor_mode,
+		.sensor_type = uvc_gadget_camera_contex->sensor_config->sensor_type,
 	};
 	vp_pipeline_info.camera_config_info = *camera_config_info;
 	ret = vp_create_and_start_pipeline(pipe_contex, &vp_pipeline_info);
@@ -394,13 +396,15 @@ int main(int argc, char *argv[])
 			   index,
 			   vp_sensor_config_list[index]->sensor_name,
 			   vp_sensor_config_list[index]->config_file);
-		ret = vp_sensor_fixed_mipi_host(g_uvc_gadget_camera_contex.sensor_config,
-			&g_uvc_gadget_camera_contex.csi_config);
-		if (ret != 0)
-		{
-			printf("No Camera Sensor found. Please check if the specified "
-				   "sensor is connected to the Camera interface.\n");
-			return ret;
+		if(g_uvc_gadget_camera_contex.sensor_config->sensor_type == SENSOR_TYPE_NORMAL) {
+			ret = vp_sensor_fixed_mipi_host(g_uvc_gadget_camera_contex.sensor_config,
+				&g_uvc_gadget_camera_contex.csi_config);
+			if (ret != 0)
+			{
+				printf("No Camera Sensor found. Please check if the specified "
+					"sensor is connected to the Camera interface.\n");
+				return ret;
+			}
 		}
 	}else{
 		printf("Unsupport sensor index:%d\n", index);
@@ -415,11 +419,11 @@ int main(int argc, char *argv[])
 		.frame_width = g_uvc_gadget_camera_contex.sensor_config->camera_config->width,
 		.frame_height = g_uvc_gadget_camera_contex.sensor_config->camera_config->height,
 
-		//uvc回调函数：uvc 发送新数据时触发
+		//uvc 回调函数： uvc 发送新数据时触发
 		.prepare_frame_cb = {uvc_get_frame_cb_func, &g_uvc_gadget_camera_contex},
-		//uvc回调函数：uvc 将数据传输完成时触发
+		//uvc 回调函数： uvc 将数据传输完成时触发
 		.release_frame_cb = {uvc_release_frame_cb_func, &g_uvc_gadget_camera_contex},
-		//uvc回调函数：客户端打开(启动pipeline)和关闭(关闭pipeline)时触发
+		//uvc 回调函数：客户端打开 ( 启动 pipeline) 和关闭 ( 关闭 pipeline) 时触发
 		.stream_on_or_off_cb = {uvc_streamon_on_or_off, &g_uvc_gadget_camera_contex}
 	};
 	g_uvc_gadget_camera_contex.uvc_contex = uvc_gadget_create_and_start(&g_uvc_gadget_camera_info);

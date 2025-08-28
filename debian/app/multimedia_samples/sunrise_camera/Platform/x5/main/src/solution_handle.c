@@ -217,8 +217,17 @@ int solution_handle_check_config(solution_check_info_t *check_info){
 		SC_LOGE("Solution(%s) not implemented, Please look forward to it!", solution_cfg.solution_name);
 			return -1;
 	}
+	//检查ION内存是否足够
 	check_info->ion_lack = solution_check_ion_is_enough(&solution_ion_param_info); //for ion
+	//检查VPU能力是否足够
 	check_info->vpu_lack = solution_check_vpu_is_enough(&solution_vpu_param_info); //for vpu
+
+	//检查盒子模式输入文件的编解码是否匹配
+	if (strcmp(solution_cfg.solution_name, "box_solution") == 0){
+		solution_decode_param_info_t solution_decode_param_info;
+		vpp_box_decode_param_get(&solution_cfg, &solution_decode_param_info);
+		solution_check_decode_param_is_match(&solution_decode_param_info, &check_info->decode_param_check_info);
+	}
 	return 0;
 }
 

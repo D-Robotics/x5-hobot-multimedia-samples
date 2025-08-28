@@ -25,7 +25,7 @@ int check_camera_config(param_config_t *param_config, int *pipe_contex_need_vse,
 
 	printf("\n\n Show VSE info:\n");
 
-	//VSE放大： 最大分辨率是4K，放大倍数最大是4倍
+	//VSE 放大： 最大分辨率是 4K，放大倍数最大是 4 倍
 	int quarter_of_vse_max_resolution = 3840 *2160 / 4;
 	for(int i = 0; i < param_config->sensor_config_count; i++){
 		vp_sensor_config_t* sensor_config = param_config->sensor_param_config[i].sensor_config;
@@ -113,7 +113,7 @@ void parse_config(int chn, sensor_param_config_t *sensor_param_config, const cha
 	char *parts[SENSOR_CHN_CONFIG_ELEM_NUM];
 	int sensor_idx = -1;
 	int count = split_string(config, " ", parts, SENSOR_CHN_CONFIG_ELEM_NUM);
-
+	int sensor_type = 0;
 	static int32_t used_mipi_host = 0; //must is static
 	for (int i = 0; i < count; i++) {
 		char *key_value[2];
@@ -136,24 +136,26 @@ void parse_config(int chn, sensor_param_config_t *sensor_param_config, const cha
 						sensor_idx,
 						vp_sensor_config_list[sensor_idx]->sensor_name,
 						vp_sensor_config_list[sensor_idx]->config_file);
+				sensor_type = sensor_param_config->sensor_config->sensor_type;
 			} else {
 				printf("Unsupport sensor index:%d\n", sensor_idx);
 				print_help();
 				exit(0);
 			}
-			ret = vp_sensor_multi_fixed_mipi_host(sensor_param_config->sensor_config, used_mipi_host,
+			if(sensor_type == SENSOR_TYPE_NORMAL) {
+				ret = vp_sensor_multi_fixed_mipi_host(sensor_param_config->sensor_config, used_mipi_host,
 				&sensor_param_config->csi_config);
-			if (ret < 0) {
-				printf("vp sensor fixed mipi host fail, sensor id %d."
-					"Maybe No Camera Sensor found. Please check if the specified "
-					"sensor is connected to the Camera interface.\n\n", sensor_idx);
-				exit(0);
+				if (ret < 0) {
+					printf("vp sensor fixed mipi host fail, sensor id %d."
+						"Maybe No Camera Sensor found. Please check if the specified "
+						"sensor is connected to the Camera interface.\n\n", sensor_idx);
+					exit(0);
+				}
+				sensor_param_config->select_sensor_id = sensor_idx;
+				// active_mipi_host 的配置在 create_vin_node 函数中需要再配置一下
+				sensor_param_config->active_mipi_host = sensor_param_config->sensor_config->vin_node_attr->cim_attr.mipi_rx;
+				used_mipi_host |= (1 << sensor_param_config->sensor_config->vin_node_attr->cim_attr.mipi_rx);
 			}
-			sensor_param_config->select_sensor_id = sensor_idx;
-			// active_mipi_host 的配置在create_vin_node函数中需要再配置一下
-			sensor_param_config->active_mipi_host = sensor_param_config->sensor_config->vin_node_attr->cim_attr.mipi_rx;
-			used_mipi_host |= (1 << sensor_param_config->sensor_config->vin_node_attr->cim_attr.mipi_rx);
-
 			printf("mipi host %d\n", sensor_param_config->active_mipi_host);
 
 		} else if (strcmp(key_value[0], "channel") == 0) {

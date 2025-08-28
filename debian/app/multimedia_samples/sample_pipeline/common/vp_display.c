@@ -27,8 +27,14 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
-
+#include <math.h>
+#include <poll.h>
 #include "vp_display.h"
+
+
+static void page_flip_handler(int fd, unsigned int frame,
+							unsigned int sec, unsigned int usec,
+							void *data);
 
 static void add_property(int drm_fd, drmModeAtomicReq *req, uint32_t obj_id,
 	uint32_t obj_type, const char *name, uint64_t value)
@@ -143,75 +149,90 @@ static float __mode_vrefresh(drmModeModeInfo *mode)
 }
 static int drm_setup_kms(vp_drm_context_t *ctx)
 {
-
-	// print_connector_info(ctx->drm_fd);
-
 	drmModeRes *resources = drmModeGetResources(ctx->drm_fd);
-	if (!resources)
-	{
+	if (!resources) {
 		perror("drmModeGetResources");
 		return -1;
 	}
 
 	drmModeConnector *connector = drmModeGetConnector(ctx->drm_fd, ctx->connector_id);
-	if (!connector)
-	{
+	if (!connector) {
 		perror("drmModeGetConnector");
 		drmModeFreeResources(resources);
 		return -1;
 	}
 
 	drmModeCrtc *crtc = drmModeGetCrtc(ctx->drm_fd, ctx->crtc_id);
-	if (!crtc)
-	{
+	if (!crtc) {
 		perror("drmModeGetCrtc");
 		drmModeFreeConnector(connector);
 		drmModeFreeResources(resources);
 		return -1;
 	}
 
-	float fps = 30.0;
+	float target_fps = 30.0;
+	float fps_tolerance = 1.0;
 	drmModeModeInfo *mode = NULL;
-	for (int i = 0; i < connector->count_modes; i++)
-	{
-		if (connector->modes[i].hdisplay == ctx->width && connector->modes[i].vdisplay == ctx->height)
-		{
-			mode = &connector->modes[i];
-			fps = __mode_vrefresh(mode);
-			printf("fps:%f\n", fps);
-			if((fps <= 31.00) && (fps >= 28.00)){
-				printf("select %f\n", fps);
+	drmModeModeInfo *resolution_match = NULL; // 新增：同分辨率模式缓存
+
+	for (int i = 0; i < connector->count_modes; i++) {
+		float current_fps = __mode_vrefresh(&connector->modes[i]);
+		printf("Checking mode %dx%d@%.2fHz\n",
+			connector->modes[i].hdisplay,
+			connector->modes[i].vdisplay,
+			current_fps);
+
+		if (connector->modes[i].hdisplay == ctx->width &&
+			connector->modes[i].vdisplay == ctx->height) {
+
+			if (!resolution_match) {
+				resolution_match = &connector->modes[i];
+				printf("Found resolution match: %dx%d@%.2fHz\n",
+					  resolution_match->hdisplay, resolution_match->vdisplay, current_fps);
+			}
+
+			// 检查是否满足帧率要求
+			if (fabs(current_fps - target_fps) <= fps_tolerance) {
+				mode = &connector->modes[i];
+				printf("Selected exact match: %dx%d@%.2fHz\n",
+					mode->hdisplay, mode->vdisplay, current_fps);
 				break;
 			}
 		}
 	}
 
-	if (!mode)
-	{
-#if 1
-		drmModeFreeCrtc(crtc);
-		drmModeFreeConnector(connector);
-		drmModeFreeResources(resources);
-		return -1;
-#else
-		if(connector->count_modes > 0){
+	if (!mode && resolution_match) {
+		mode = resolution_match;
+		printf("Using resolution-matched mode: %dx%d@%.2fHz\n",
+			mode->hdisplay, mode->vdisplay, __mode_vrefresh(mode));
+	}
+
+	if (!mode) {
+		fprintf(stderr, "No matching mode found for %dx%d\n", ctx->width, ctx->height);
+		if (connector->count_modes > 0) {
 			mode = &connector->modes[0];
-			fprintf(stderr, "Mode not found set resolution %d %d, so use default %d %d\n",
-				ctx->width, ctx->height, connector->modes[0].hdisplay, connector->modes[0].vdisplay);
-		}else{
-			fprintf(stderr, "Mode not found");
+			fprintf(stderr, "Using fallback mode %dx%d@%.2fHz\n",
+				mode->hdisplay, mode->vdisplay, __mode_vrefresh(mode));
+		} else {
+			fprintf(stderr, "No available modes\n");
 			drmModeFreeCrtc(crtc);
 			drmModeFreeConnector(connector);
 			drmModeFreeResources(resources);
 			return -1;
 		}
+	}
 
-#endif
+	if (mode->hdisplay != ctx->width || mode->vdisplay != ctx->height) {
+		fprintf(stderr, "Mode resolution mismatch: %dx%d != %dx%d\n",
+			mode->hdisplay, mode->vdisplay, ctx->width, ctx->height);
+		drmModeFreeCrtc(crtc);
+		drmModeFreeConnector(connector);
+		drmModeFreeResources(resources);
+		return -1;
 	}
 
 	uint32_t blob_id;
-	if (drmModeCreatePropertyBlob(ctx->drm_fd, mode, sizeof(*mode), &blob_id) < 0)
-	{
+	if (drmModeCreatePropertyBlob(ctx->drm_fd, mode, sizeof(*mode), &blob_id) < 0) {
 		perror("drmModeCreatePropertyBlob");
 		drmModeFreeCrtc(crtc);
 		drmModeFreeConnector(connector);
@@ -219,15 +240,8 @@ static int drm_setup_kms(vp_drm_context_t *ctx)
 		return -1;
 	}
 
-	if((fps > 31.00) || (fps < 28.00)){
-		mode = &connector->modes[0];
-		fps = __mode_vrefresh(mode);
-		printf("not found suitable mode, use fist mode, fps: %f.\n", fps);
-	}
-
 	drmModeAtomicReq *req = drmModeAtomicAlloc();
-	if (!req)
-	{
+	if (!req) {
 		perror("drmModeAtomicAlloc");
 		drmModeFreeCrtc(crtc);
 		drmModeFreeConnector(connector);
@@ -240,8 +254,7 @@ static int drm_setup_kms(vp_drm_context_t *ctx)
 	add_property(ctx->drm_fd, req, ctx->crtc_id, DRM_MODE_OBJECT_CRTC, "MODE_ID", blob_id);
 	add_property(ctx->drm_fd, req, ctx->connector_id, DRM_MODE_OBJECT_CONNECTOR, "CRTC_ID", ctx->crtc_id);
 
-	for (int i = 0; i < ctx->plane_count; i++)
-	{
+	for (int i = 0; i < ctx->plane_count; i++) {
 		add_property(ctx->drm_fd, req, ctx->planes[i].plane_id, DRM_MODE_OBJECT_PLANE, "SRC_X", 0);
 		add_property(ctx->drm_fd, req, ctx->planes[i].plane_id, DRM_MODE_OBJECT_PLANE, "SRC_Y", 0);
 		add_property(ctx->drm_fd, req, ctx->planes[i].plane_id, DRM_MODE_OBJECT_PLANE, "SRC_W", ctx->planes[i].src_w << 16);
@@ -283,8 +296,7 @@ static int drm_setup_kms(vp_drm_context_t *ctx)
 		}
 	}
 
-	if (drmModeAtomicCommit(ctx->drm_fd, req, flags, NULL) < 0)
-	{
+	if (drmModeAtomicCommit(ctx->drm_fd, req, flags, NULL) < 0) {
 		perror("drmModeAtomicCommit");
 		drmModeAtomicFree(req);
 		drmModeFreeCrtc(crtc);
@@ -482,6 +494,15 @@ int32_t vp_display_init(vp_drm_context_t *drm_ctx, int32_t width, int32_t height
 
 	drm_init_config(drm_ctx, width, height);
 
+	drm_ctx->front_fb_id = 0;
+	drm_ctx->back_fb_id = 0;
+	drm_ctx->back_ready = false;
+	pthread_mutex_init(&drm_ctx->buf_mutex, NULL);
+
+	memset(&drm_ctx->evctx, 0, sizeof(drm_ctx->evctx));
+	drm_ctx->evctx.version = DRM_EVENT_CONTEXT_VERSION;
+	drm_ctx->evctx.page_flip_handler = page_flip_handler;
+
 	drm_ctx->drm_fd = drmOpen("vs-drm", NULL);
 	if (drm_ctx->drm_fd < 0) {
 		perror("drmOpen failed");
@@ -490,7 +511,8 @@ int32_t vp_display_init(vp_drm_context_t *drm_ctx, int32_t width, int32_t height
 
 	connector = find_connector(drm_ctx->drm_fd);
 	if (connector == NULL) {
-		perror("find_connector failed");
+		fprintf(stderr, "No suitable connector found\n");
+		close(drm_ctx->drm_fd);
 		return -1;
 	}
 	drm_ctx->connector_id = connector->connector_id;
@@ -500,12 +522,12 @@ int32_t vp_display_init(vp_drm_context_t *drm_ctx, int32_t width, int32_t height
 
 	printf("Setting up KMS...\n");
 	ret = drm_setup_kms(drm_ctx);
-	if (ret < 0)
-	{
-		printf("drm_setup_kms failed\n");
+	if (ret < 0) {
+		fprintf(stderr, "drm_setup_kms failed\n");
 		close(drm_ctx->drm_fd);
 		return -1;
 	}
+
 	return ret;
 }
 
@@ -514,13 +536,14 @@ int32_t vp_display_deinit(vp_drm_context_t *drm_ctx)
 	int32_t ret = 0;
 	dma_buf_map_t *current, *tmp;
 
-	// 释放 buffer_map 中的所有条目
-	HASH_ITER(hh, drm_ctx->buffer_map, current, tmp)
-	{
-		if (current->fb_id)
-		{
-			if (drmModeRmFB(drm_ctx->drm_fd, current->fb_id) < 0)
-			{
+	struct pollfd pfd = {drm_ctx->drm_fd, POLLIN, 0};
+	while (poll(&pfd, 1, 0) > 0) {
+		drmHandleEvent(drm_ctx->drm_fd, &drm_ctx->evctx);
+	}
+
+	HASH_ITER(hh, drm_ctx->buffer_map, current, tmp) {
+		if (current->fb_id) {
+			if (drmModeRmFB(drm_ctx->drm_fd, current->fb_id) < 0) {
 				perror("drmModeRmFB");
 			}
 		}
@@ -528,49 +551,43 @@ int32_t vp_display_deinit(vp_drm_context_t *drm_ctx)
 		free(current);
 	}
 
+	pthread_mutex_lock(&drm_ctx->buf_mutex);
+	if (drm_ctx->front_fb_id != 0) {
+		drmModeRmFB(drm_ctx->drm_fd, drm_ctx->front_fb_id);
+	}
+	if (drm_ctx->back_fb_id != 0 && drm_ctx->back_fb_id != drm_ctx->front_fb_id) {
+		drmModeRmFB(drm_ctx->drm_fd, drm_ctx->back_fb_id);
+	}
+	pthread_mutex_unlock(&drm_ctx->buf_mutex);
 	drmModeSetCrtc(drm_ctx->drm_fd, drm_ctx->crtc_id, 0, 0, 0, NULL, 0, NULL);
 
 	drmModeRes *resources = drmModeGetResources(drm_ctx->drm_fd);
-	if (!resources)
-	{
-		perror("drmModeGetResources");
-		return -1;
-	}
-
-	for (int i = 0; i < resources->count_crtcs; i++)
-	{
-		drmModeFreeCrtc(drmModeGetCrtc(drm_ctx->drm_fd, resources->crtcs[i]));
-	}
-
-	for (int i = 0; i < resources->count_connectors; i++)
-	{
-		drmModeFreeConnector(drmModeGetConnector(drm_ctx->drm_fd, resources->connectors[i]));
-	}
-
-	for (int i = 0; i < resources->count_encoders; i++)
-	{
-		drmModeFreeEncoder(drmModeGetEncoder(drm_ctx->drm_fd, resources->encoders[i]));
+	if (resources) {
+		for (int i = 0; i < resources->count_crtcs; i++) {
+			drmModeFreeCrtc(drmModeGetCrtc(drm_ctx->drm_fd, resources->crtcs[i]));
+		}
+		for (int i = 0; i < resources->count_connectors; i++) {
+			drmModeFreeConnector(drmModeGetConnector(drm_ctx->drm_fd, resources->connectors[i]));
+		}
+		for (int i = 0; i < resources->count_encoders; i++) {
+			drmModeFreeEncoder(drmModeGetEncoder(drm_ctx->drm_fd, resources->encoders[i]));
+		}
+		drmModeFreeResources(resources);
 	}
 
 	drmModePlaneRes *plane_resources = drmModeGetPlaneResources(drm_ctx->drm_fd);
-	if (plane_resources)
-	{
-		for (uint32_t i = 0; i < plane_resources->count_planes; i++)
-		{
+	if (plane_resources) {
+		for (uint32_t i = 0; i < plane_resources->count_planes; i++) {
 			drmModeFreePlane(drmModeGetPlane(drm_ctx->drm_fd, plane_resources->planes[i]));
 		}
 		drmModeFreePlaneResources(plane_resources);
 	}
-
-	drmModeFreeResources(resources);
-
-	if (drm_ctx->drm_fd >= 0)
-	{
+	if (drm_ctx->drm_fd >= 0) {
 		close(drm_ctx->drm_fd);
 		drm_ctx->drm_fd = -1;
 	}
 
-	printf("\r\nDRM resources cleaned up.\n");
+	pthread_mutex_destroy(&drm_ctx->buf_mutex);
 
 	return ret;
 }
@@ -659,22 +676,67 @@ static uint32_t get_format_from_string(const char *format_str)
 	}
 }
 
-static uint32_t get_framebuffer(vp_drm_context_t *drm_ctx,
-	int dma_buf_fd, int plane_index)
+static void page_flip_handler(int fd, unsigned int frame,
+							unsigned int sec, unsigned int usec,
+							void *data) {
+	vp_drm_context_t *ctx = (vp_drm_context_t *)data;
+	static struct timespec last_flip;
+	struct timespec now;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	long interval = (now.tv_sec - last_flip.tv_sec) * 1000000 +
+				   (now.tv_nsec - last_flip.tv_nsec) / 1000;
+	last_flip = now;
+
+	pthread_mutex_lock(&ctx->buf_mutex);
+
+	if (ctx->back_fb_id != 0) {
+		uint32_t tmp = ctx->front_fb_id;
+		ctx->front_fb_id = ctx->back_fb_id;
+		ctx->back_fb_id = tmp;
+		ctx->back_ready = false;
+	} else {
+		fprintf(stderr, "Warning: No back buffer available\n");
+	}
+
+	pthread_mutex_unlock(&ctx->buf_mutex);
+
+	printf("Page flip completed at %u.%06u (interval: %ldμs)\n",
+		  sec, usec, interval);
+}
+
+static uint32_t get_framebuffer(
+	vp_drm_context_t *drm_ctx,
+	int dma_buf_fd,
+	int plane_index,
+	int width,
+	int height,
+	int stride,
+	int vstride)
 {
 	dma_buf_map_t *entry = NULL;
 	HASH_FIND_INT(drm_ctx->buffer_map, &dma_buf_fd, entry);
-	if (entry)
-	{
-		return entry->fb_id;
-	}
 
-	if (drm_ctx->buffer_count >= drm_ctx->max_buffers)
-	{
-		printf("Buffer map is full, unable to add new framebuffer %d >= %d\n",
-			drm_ctx->buffer_count, drm_ctx->max_buffers);
-		return 0;
+	if (entry) {
+		drmModeFB *fb_info = drmModeGetFB(drm_ctx->drm_fd, entry->fb_id);
+		if (fb_info) {
+			if (fb_info->width == width && fb_info->height == height &&
+				fb_info->pitch == stride) {
+				drmModeFreeFB(fb_info);
+				return entry->fb_id;
+			}
+			drmModeFreeFB(fb_info);
+		}
+
+		drmModeRmFB(drm_ctx->drm_fd, entry->fb_id);
+		HASH_DEL(drm_ctx->buffer_map, entry);
+		free(entry);
+		drm_ctx->buffer_count--;
 	}
+	VP_DEBUG("Creating new framebuffer:\n");
+	VP_DEBUG("  Resolution: %dx%d\n", width, height);
+	VP_DEBUG("  Format: %s\n", drm_ctx->planes[plane_index].format);
+	VP_DEBUG("  Stride: %d, vstride: %d\n", stride, vstride);
 
 	struct drm_prime_handle prime_handle = {
 		.fd = dma_buf_fd,
@@ -682,8 +744,7 @@ static uint32_t get_framebuffer(vp_drm_context_t *drm_ctx,
 		.handle = 0,
 	};
 
-	if (drmIoctl(drm_ctx->drm_fd, DRM_IOCTL_PRIME_FD_TO_HANDLE, &prime_handle) < 0)
-	{
+	if (drmIoctl(drm_ctx->drm_fd, DRM_IOCTL_PRIME_FD_TO_HANDLE, &prime_handle) < 0) {
 		perror("DRM_IOCTL_PRIME_FD_TO_HANDLE");
 		printf("Failed to map dma_buf_fd=%d to GEM handle\n", dma_buf_fd);
 		return 0;
@@ -692,28 +753,34 @@ static uint32_t get_framebuffer(vp_drm_context_t *drm_ctx,
 	uint32_t handles[4] = {0};
 	uint32_t strides[4] = {0};
 	uint32_t offsets[4] = {0};
+
 	handles[0] = prime_handle.handle;
-	strides[0] = drm_ctx->planes[plane_index].src_w;
+	strides[0] = stride;
 	offsets[0] = 0;
 	handles[1] = prime_handle.handle;
-	strides[1] = drm_ctx->planes[plane_index].src_w;
-	offsets[1] = drm_ctx->planes[plane_index].src_w * drm_ctx->planes[plane_index].src_h;
+	strides[1] = stride;
+	offsets[1] = stride * vstride;
 
 	uint32_t fb_id;
 	uint32_t drm_format = get_format_from_string(drm_ctx->planes[plane_index].format);
 
-	if (drmModeAddFB2(drm_ctx->drm_fd, drm_ctx->planes[plane_index].src_w, drm_ctx->planes[plane_index].src_h, drm_format, handles, strides, offsets, &fb_id, 0))
-	{
+	if (drmModeAddFB2(drm_ctx->drm_fd, width, height, drm_format,
+					 handles, strides, offsets, &fb_id, 0)) {
+		fprintf(stderr, "Failed to create framebuffer with params:\n");
+		fprintf(stderr, "  Width: %d, Height: %d\n", width, height);
+		fprintf(stderr, "  Format: %s (0x%x)\n",
+			   drm_ctx->planes[plane_index].format, drm_format);
+		fprintf(stderr, "  Strides: %u, %u\n", strides[0], strides[1]);
+		fprintf(stderr, "  Offsets: %u, %u\n", offsets[0], offsets[1]);
 		perror("drmModeAddFB2");
 		return 0;
 	}
-
-	// printf("Created new framebuffer: fb_id=%u for dma_buf_fd=%d\n", fb_id, dma_buf_fd);
 
 	entry = (dma_buf_map_t *)malloc(sizeof(dma_buf_map_t));
 	if (!entry)
 	{
 		perror("malloc");
+		drmModeRmFB(drm_ctx->drm_fd, fb_id);
 		return 0;
 	}
 
@@ -722,14 +789,15 @@ static uint32_t get_framebuffer(vp_drm_context_t *drm_ctx,
 	HASH_ADD_INT(drm_ctx->buffer_map, dma_buf_fd, entry);
 	drm_ctx->buffer_count++;
 
+	VP_DEBUG("Created framebuffer ID: %u\n", fb_id);
 	return fb_id;
 }
 int32_t vp_display_wait_blank(vp_drm_context_t *drm_ctx){
 
 	drmVBlank vbl;
-    memset(&vbl, 0, sizeof(vbl));
-    vbl.request.type = (drmVBlankSeqType)(DRM_VBLANK_RELATIVE);;
-    vbl.request.sequence = 0;
+	memset(&vbl, 0, sizeof(vbl));
+	vbl.request.type = (drmVBlankSeqType)(DRM_VBLANK_RELATIVE);;
+	vbl.request.sequence = 0;
  	uint32_t high_crtc = (0 << DRM_VBLANK_HIGH_CRTC_SHIFT);
 	vbl.request.type = (drmVBlankSeqType)(DRM_VBLANK_RELATIVE | (high_crtc & DRM_VBLANK_HIGH_CRTC_MASK) );
 	vbl.request.sequence = 1;
@@ -742,70 +810,86 @@ int32_t vp_display_wait_blank(vp_drm_context_t *drm_ctx){
 
 	return 0;
 }
-static uint64_t get_timestamp_ms()
-{
-	uint64_t timestamp;
-	struct timeval ts;
-
-	gettimeofday(&ts, NULL);
-	timestamp = (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_usec / 1000;
-	return timestamp;
-}
-
 
 int32_t vp_display_set_frame(vp_drm_context_t *drm_ctx,
 	hb_mem_graphic_buf_t *image_frame)
 {
 	int32_t ret = 0;
+	int retry_count = 3;
 	int dma_buf_fds[DRM_MAX_PLANES] = {-1, -1, -1};
-	uint32_t flags = DRM_MODE_ATOMIC_ALLOW_MODESET;
 
-	for (uint32_t i = 0; i < drm_ctx->plane_count; ++i)
-	{
+	if (!drm_ctx || !image_frame || image_frame->width == 0 || image_frame->height == 0) {
+		fprintf(stderr, "Invalid frame parameters\n");
+		return -1;
+	}
+
+	for (uint32_t i = 0; i < drm_ctx->plane_count; ++i) {
 		dma_buf_fds[i] = image_frame->fd[i];
 	}
 
 	drmModeAtomicReq *req = drmModeAtomicAlloc();
-	if (!req)
-	{
+	if (!req) {
 		perror("drmModeAtomicAlloc");
 		return -1;
 	}
 
-	for (int i = 0; i < drm_ctx->plane_count; i++)
-	{
-		if (dma_buf_fds[i] == -1)
-		{
-			continue;
-		}
+	pthread_mutex_lock(&drm_ctx->buf_mutex);
+	uint32_t fb_id = get_framebuffer(
+		drm_ctx,
+		dma_buf_fds[0],
+		0,
+		image_frame->width,
+		image_frame->height,
+		image_frame->stride,
+		image_frame->vstride
+	);
 
-		uint32_t fb_id = get_framebuffer(drm_ctx, dma_buf_fds[i], i);
-		if (fb_id == 0)
-		{
-			fprintf(stderr, "Failed to get framebuffer for plane %d\n", i);
-			drmModeAtomicFree(req);
-			return -1;
-		}
-		add_property(drm_ctx->drm_fd, req, drm_ctx->planes[i].plane_id,
-			DRM_MODE_OBJECT_PLANE, "CRTC_ID", drm_ctx->crtc_id);
-		add_property(drm_ctx->drm_fd, req, drm_ctx->planes[i].plane_id,
-			DRM_MODE_OBJECT_PLANE, "FB_ID", fb_id);
-	}
-	uint64_t start_ms = get_timestamp_ms();
-	ret = drmModeAtomicCommit(drm_ctx->drm_fd, req, flags, NULL);
-	uint64_t end_ms = get_timestamp_ms();
-	if(0){
-		printf("dff :%ldms\n", end_ms - start_ms);
-	}
-
-	if (ret < 0)
-	{
-		perror("drmModeAtomicCommit");
+	if (fb_id == 0) {
+		pthread_mutex_unlock(&drm_ctx->buf_mutex);
 		drmModeAtomicFree(req);
 		return -1;
 	}
 
+	if (drm_ctx->back_fb_id != 0 && drm_ctx->back_fb_id != fb_id) {
+		drmModeRmFB(drm_ctx->drm_fd, drm_ctx->back_fb_id);
+	}
+
+	drm_ctx->back_fb_id = fb_id;
+	drm_ctx->back_ready = true;
+
+	add_property(drm_ctx->drm_fd, req, drm_ctx->planes[0].plane_id,
+		DRM_MODE_OBJECT_PLANE, "FB_ID", fb_id);
+	add_property(drm_ctx->drm_fd, req, drm_ctx->planes[0].plane_id,
+		DRM_MODE_OBJECT_PLANE, "CRTC_ID", drm_ctx->crtc_id);
+
+	uint32_t flags = DRM_MODE_ATOMIC_NONBLOCK | DRM_MODE_PAGE_FLIP_EVENT;
+
+	while (retry_count-- > 0) {
+		ret = drmModeAtomicCommit(drm_ctx->drm_fd, req, flags, drm_ctx);
+
+		if (ret == 0) {
+			drm_ctx->back_ready = false;
+			break;
+		} else if (errno == EBUSY) {
+			usleep(10000);
+			continue;
+		} else {
+			fprintf(stderr, "Atomic commit failed: %s (ret=%d)\n",
+				   strerror(errno), ret);
+			break;
+		}
+	}
+
+	pthread_mutex_unlock(&drm_ctx->buf_mutex);
 	drmModeAtomicFree(req);
+
+	if (ret == 0) {
+		struct pollfd pfd = {drm_ctx->drm_fd, POLLIN, 0};
+		poll(&pfd, 1, 0);
+		if (pfd.revents & POLLIN) {
+			drmHandleEvent(drm_ctx->drm_fd, &drm_ctx->evctx);
+		}
+	}
 
 	return ret;
 }

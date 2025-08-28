@@ -1,17 +1,3 @@
-// Copyright (c) 2024，D-Robotics.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 #include "vp_sensors.h"
 
 #define SENSOR_WIDTH  640
@@ -49,7 +35,7 @@ static camera_config_t camera_config = {
 	.mipi_cfg = &mipi_config,
 	.gpio_enable_bit = 0x01,
 	.gpio_level_bit = 0x00,
-	.calib_lname = "/usr/hobot/bin/ov5647_640x480_tuning.json",
+	.calib_lname = "/usr/hobot/lib/sensor/ov5647_640x480_tuning.json",
 };
 
 static vin_node_attr_t vin_node_attr = {
@@ -69,7 +55,7 @@ static vin_node_attr_t vin_node_attr = {
 };
 
 static vin_attr_ex_t ov5647_vin_attr_ex = {
-	.vin_attr_ex_mask = 0x80,
+	.vin_attr_ex_mask = 0x00,
 	.mclk_ex_attr = {
 		.mclk_freq = 24000000,
 	},

@@ -1,0 +1,14 @@
+prefix=/home/hcy/code/third/webplayer/ffmpeg/../WasmVideoPlayer/dist
+exec_prefix=${prefix}
+libdir=/home/hcy/code/third/webplayer/ffmpeg/../WasmVideoPlayer/dist/lib
+includedir=/home/hcy/code/third/webplayer/ffmpeg/../WasmVideoPlayer/dist/include
+
+Name: libavcodec
+Description: FFmpeg codec library
+Version: 61.33.102
+Requires: libavutil >= 59.57.100
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavcodec -pthread -lm
+Libs.private: 
+Cflags: -I${includedir}

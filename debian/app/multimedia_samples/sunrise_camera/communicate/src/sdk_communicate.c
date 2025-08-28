@@ -42,6 +42,10 @@ extern int rtspserver_cmd_register();
 extern int websocket_cmd_register();
 #endif
 
+#ifdef MODULE_MEDIA_SERVER
+extern int media_server_cmd_register();
+#endif
+
 
 int sdk_globle_prerare()
 {
@@ -65,6 +69,9 @@ int sdk_globle_prerare()
 #endif
 #ifdef MODULE_WEBSOCKET
 	websocket_cmd_register();
+#endif
+#ifdef MODULE_MEDIA_SERVER
+	media_server_cmd_register();
 #endif
 
 	return 0;

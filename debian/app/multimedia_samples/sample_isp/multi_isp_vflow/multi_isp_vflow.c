@@ -560,6 +560,8 @@ static int handle_user_command(pipe_contex_t *vin_isp_contex,
 				}
 				break;
 			case 'e': // 循环获取，同时从路回灌ae,awb
+				// 回灌 ae,awb 时需要先给 ISP 送一帧数据
+				vin_dump_func(vin_node_handle, 0, isp_node_handle);
 				for (i = 0; i < 12; i++) {
 					isp_dump_func(vin_isp_contex->isp_node_handle, 1);
 					vin_dump_func(vin_node_handle

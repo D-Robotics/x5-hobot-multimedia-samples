@@ -1,0 +1,53 @@
+{
+    "inputRes": [
+        1920,
+        1080
+    ],
+    "param": {
+        "fov": 180,
+        "diameter": 1080,
+        "offsetX": 0,
+        "offsetY": 0
+    },
+    "outputRes": [
+        1920,
+        1080
+    ],
+    "transformations": [
+        {
+            "transformation": "Dewarp_keystone",
+            "position": [
+                0,
+                0,
+                1920,
+                1080
+            ],
+            "param": {
+                "left_base_angle": 70,
+                "right_base_angle": 70,
+                "azimuth": 0,
+                "elevation": 0,
+                "rotation": 0,
+                "fovWidth": 90,
+                "fovHeight": 90,
+                "keepRatio": 0,
+                "cylindricityX": 1,
+                "cylindricityY": 1
+            },
+            "ptz": [
+                0,
+                0,
+                1
+            ],
+            "roi": {
+                "x": 0,
+                "y": 0,
+                "w": 1920,
+                "h": 1080
+            }
+        }
+    ],
+    "mode": "semiplanar420",
+    "eccMode": "eccDisabled",
+    "colourspace": "yuv"
+}

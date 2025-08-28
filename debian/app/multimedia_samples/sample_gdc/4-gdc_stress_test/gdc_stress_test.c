@@ -69,7 +69,7 @@ int gdc_config_free(hb_mem_common_buf_t *bin_buf);
 int read_nv12_image(gdc_info_s *gdc_info, hbn_vnode_image_t *input_image);
 int create_start_gdc_vnode(gdc_info_s *gdc_info, hb_mem_common_buf_t *bin_buf);
 int stop_destroy_gdc_vnode(gdc_info_s *gdc_info);
-int run_gdc(gdc_info_s *gdc_info, hbn_vnode_image_t *input_image);
+int run_gdc(gdc_info_s *gdc_info, hbn_vnode_image_t *input_image, int savefile);
 int run_gdc_stress_test(gdc_info_s *gdc_info, hbn_vnode_image_t *input_image);
 
 static void print_help() {
@@ -333,7 +333,7 @@ int stop_destroy_gdc_vnode(gdc_info_s *gdc_info) {
 	return 0;
 }
 
-int run_gdc(gdc_info_s *gdc_info, hbn_vnode_image_t *input_image) {
+int run_gdc(gdc_info_s *gdc_info, hbn_vnode_image_t *input_image, int savefile) {
 	int ret;
 	uint32_t chn_id = 0;
 	hbn_vnode_image_t output_img = {0};
@@ -343,11 +343,13 @@ int run_gdc(gdc_info_s *gdc_info, hbn_vnode_image_t *input_image) {
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vnode_getframe(gdc_info->gdc_vnode_fd, chn_id, timeout, &output_img);
 	ERR_CON_EQ(ret, 0);
-	dump_2plane_yuv_to_file(gdc_info->output_file,
-					output_img.buffer.virt_addr[0],
-					output_img.buffer.virt_addr[1],
-					output_img.buffer.size[0],
-					output_img.buffer.size[1]);
+	if(savefile == 1){
+		dump_2plane_yuv_to_file(gdc_info->output_file,
+						output_img.buffer.virt_addr[0],
+						output_img.buffer.virt_addr[1],
+						output_img.buffer.size[0],
+						output_img.buffer.size[1]);
+	}
 	ret = hbn_vnode_releaseframe(gdc_info->gdc_vnode_fd, chn_id, &output_img);
 	ERR_CON_EQ(ret, 0);
 
@@ -363,7 +365,7 @@ int run_gdc_stress_test(gdc_info_s *gdc_info, hbn_vnode_image_t *input_image)
 
 	gettimeofday(&tv_begin, NULL);
 	for(i = 0; i <= gdc_info->count; i++){
-		ret = run_gdc(gdc_info, input_image);
+		ret = run_gdc(gdc_info, input_image, 0);
 		ERR_CON_EQ(ret, 0);
 		if(i > time_count){
 			gettimeofday(&tv_end, NULL);
@@ -374,6 +376,8 @@ int run_gdc_stress_test(gdc_info_s *gdc_info, hbn_vnode_image_t *input_image)
 	gettimeofday(&tv_end, NULL);
 	printf("Gdc time consuming [%s]: %ld \n", gdc_info->pid, tv_end.tv_sec - tv_begin.tv_sec);
 	printf("fps average gdc [%s] = %ld \n", gdc_info->pid, gdc_info->count / (tv_end.tv_sec - tv_begin.tv_sec));
+	ret = run_gdc(gdc_info, input_image, 1);
+	ERR_CON_EQ(ret, 0);
 
 	return 0;
 }

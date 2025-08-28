@@ -1,0 +1,45 @@
+{
+    "inputRes": [
+        1920,
+        1080
+    ],
+    "param": {
+        "fov": 180,
+        "diameter": 1080,
+        "offsetX": 0,
+        "offsetY": 0
+    },
+    "outputRes": [
+        1920,
+        1080
+    ],
+    "transformations": [
+        {
+            "transformation": "Stereographic",
+            "position": [
+                0,
+                0,
+                1920,
+                1080
+            ],
+            "param": {
+                "strength": 1,
+                "rotation": 0
+            },
+            "ptz": [
+                0,
+                0,
+                1
+            ],
+            "roi": {
+                "x": 0,
+                "y": 0,
+                "w": 1920,
+                "h": 1080
+            }
+        }
+    ],
+    "mode": "semiplanar420",
+    "eccMode": "eccDisabled",
+    "colourspace": "yuv"
+}

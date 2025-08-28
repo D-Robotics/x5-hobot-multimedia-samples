@@ -47,8 +47,8 @@
 #define VP_CODEC_MASK 0x00000000
 #define VPP_DISPLAY_MASK 0xfffffffe
 
-#define VP_GET_FRAME_TIMEOUT 2000
-#define VP_DECODER_GET_FRAME_TIMEOUT 4000
+#define VP_GET_FRAME_TIMEOUT 10000
+#define VP_DECODER_GET_FRAME_TIMEOUT 10000
 
 #define VP_MAX_OSD_REGION (4)
 
@@ -56,6 +56,7 @@
  * Align by 16
  */
 #define ALIGN_16(v) ((v + (16 - 1)) / 16 * 16)
+#define ALIGN_8(v) ((v + (8 - 1)) / 8 * 8)
 
 #define VP_GET_MD_CODEC_TYPE(v) \
 	({ \
@@ -115,6 +116,7 @@ typedef struct osd_position_s{
 }osd_position_t;
 typedef struct osd_info_s{
 	int valid_osd_region_count;
+	uint8_t vse_chn[VP_MAX_OSD_REGION];
 	osd_position_t position[VP_MAX_OSD_REGION];
 	hbn_rgn_handle_t handle [VP_MAX_OSD_REGION];
 	hbn_rgn_bitmap_t bitmap [VP_MAX_OSD_REGION];

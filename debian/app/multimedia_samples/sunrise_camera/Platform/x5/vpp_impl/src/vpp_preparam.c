@@ -114,8 +114,56 @@ void vpp_video_frame_buffer_info_to_vnode_image(const mc_video_frame_buffer_info
 	for (int i = 0; i < 3; ++i) {
 		dst->buffer.virt_addr[i] = src->vir_ptr[i];
 		dst->buffer.phys_addr[i] = src->phy_ptr[i];
+		dst->buffer.fd[i] = src->fd[i];
+		printf("i %d \n", dst->buffer.fd[i]);
 	}
 
 	// Set metadata to NULL
 	dst->metadata = NULL;
+}
+
+void vpp_get_sub_stream_resolution(const int width, const int height, int *sub_width, int *sub_height) {
+	int w = width;
+	int h = height;
+
+	// // 情况1：任一边小于目标分辨率，则减半
+	if (width < 1280 || height < 720) {
+		w = width / 2;
+		h = height / 2;
+	}else if((width == 4000) && (height == 3000)){
+		// 情况2：4000 * 3000为特殊分辨率，按照 1280 缩放回导致VSE获取不到流
+		w = 960;
+		h = 720;  // 四舍五入
+	} else {
+		// 情况3：宽缩放到1280，高等比缩放
+		float scale = 1280.0f / width;
+		w = 1280;
+		h = (int)(height * scale + 0.5f);  // 四舍五入
+	}
+
+	// 情况3：对齐到16字节
+	*sub_width = ALIGN_16(w);
+	*sub_height = ALIGN_8(h); //编码器要求8字节对齐， VSE要求2字节对齐
+}
+int32_t alloc_graphic_buffer(hbn_vnode_image_t *img, int w, int h, int32_t format)
+{
+	int32_t ret = 0;
+
+	// 一定需要是连续的内存buffer，否则解码出来的图像送进 vse 之后会有问题
+	int64_t flags = HB_MEM_USAGE_MAP_INITIALIZED |
+			HB_MEM_USAGE_PRIV_HEAP_2_RESERVERD |
+			HB_MEM_USAGE_CPU_READ_OFTEN |
+			HB_MEM_USAGE_CPU_WRITE_OFTEN |
+			HB_MEM_USAGE_CACHED |
+			HB_MEM_USAGE_GRAPHIC_CONTIGUOUS_BUF;
+	ret = hb_mem_alloc_graph_buf(w, h, format, flags, w, h, &img->buffer);
+	if (ret < 0)
+		return ret;
+
+	img->info.frame_id   = 0;
+	img->info.timestamps = 0;
+	img->info.frame_done  = 0;
+	img->info.bufferindex = 0;
+
+	return 0;
 }

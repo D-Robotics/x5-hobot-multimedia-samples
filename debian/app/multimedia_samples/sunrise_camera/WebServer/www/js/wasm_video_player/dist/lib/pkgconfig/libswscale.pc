@@ -1,0 +1,14 @@
+prefix=/home/hcy/code/third/webplayer/ffmpeg/../WasmVideoPlayer/dist
+exec_prefix=${prefix}
+libdir=/home/hcy/code/third/webplayer/ffmpeg/../WasmVideoPlayer/dist/lib
+includedir=/home/hcy/code/third/webplayer/ffmpeg/../WasmVideoPlayer/dist/include
+
+Name: libswscale
+Description: FFmpeg image rescaling library
+Version: 8.13.100
+Requires: libavutil >= 59.57.100
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lswscale -lm
+Libs.private: 
+Cflags: -I${includedir}

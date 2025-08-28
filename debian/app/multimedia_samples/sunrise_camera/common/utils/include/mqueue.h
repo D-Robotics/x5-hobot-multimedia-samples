@@ -46,5 +46,5 @@ teQueueStatus mQueueDequeue(tsQueue *psQueue, void **ppvData);
 teQueueStatus mQueueDequeueTimed(tsQueue *psQueue, uint32_t u32WaitTimeMil, void **ppvData);
 int mQueueIsFull(tsQueue *psQueue);
 int mQueueIsEmpty(tsQueue *psQueue);
-
+uint32_t mQueueGetCount(tsQueue *psQueue);
 #endif // MQUEUE_H_

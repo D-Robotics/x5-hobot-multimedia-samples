@@ -1,17 +1,3 @@
-// Copyright (c) 2024，D-Robotics.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 /******************************************************************************
   Copyright (c) 2013 Morten Houmøller Nygaard - www.mortz.dk - admin@mortz.dk
 
@@ -54,6 +40,7 @@ typedef struct {
 ws_wrap_t *ws_wrap_instace();
 void ws_wrap_destory(ws_wrap_t *instance);
 int ws_wrap_start(int port_num);
+int ws_wrap_stop(void);
 int ws_send_message(const char *message, uint64_t length);
 int ws_send_binary(ws_client *n, unsigned char *message, uint64_t length);
 int ws_send_nalu_to_wfs(ws_client *n, uint32_t header_info,

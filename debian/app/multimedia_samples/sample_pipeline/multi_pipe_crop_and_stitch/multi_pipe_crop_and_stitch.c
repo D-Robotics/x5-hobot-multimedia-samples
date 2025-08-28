@@ -64,7 +64,7 @@ typedef struct {
 	int channel;
 	int obj_count;
 	pthread_mutex_t lock;
-	detect_object_t objs[BPU_RESULT_MAX_COUNT]; //1个通道最多存放的目标个数
+	detect_object_t objs[BPU_RESULT_MAX_COUNT]; //1 个通道最多存放的目标个数
 }bpu_result_t;
 
 typedef struct {
@@ -112,7 +112,7 @@ typedef struct {
 	int n2d_frame_index;
 
 	uint64_t hdmi_wakeup_time_us;
-	int enable_isp_online; //两路都需要VSE时，才能Online
+	int enable_isp_online; // 两路都需要 VSE 时，才能 Online
 
 } multi_pipe_stitch_info_t;
 
@@ -506,7 +506,7 @@ void *get_data_from_pipeline(void *context){
 			memset(pipeline_chn_frame, 0, sizeof(hbn_vnode_image_t));
 
 			performance_test_start(performace_test_param);
-			ret = hbn_vnode_getframe(pipeline_node_handle, pipeline_node_channel, 1000, pipeline_chn_frame);
+			ret = hbn_vnode_getframe(pipeline_node_handle, pipeline_node_channel, 2000, pipeline_chn_frame);
 			if (ret != 0){
 				printf("[%d] hbn_vnode_getframe %s channel %d failed, error code %d, handle %ld\n",
 					i, pipeline_node_name, pipeline_node_channel, ret, pipeline_node_handle);
@@ -522,7 +522,7 @@ void *get_data_from_pipeline(void *context){
 		performance_test_stop(&performace_test_param_get_pipeline);
 
 		performance_test_start(&performace_test_param_save_queue);
-		ret = sync_queue_save_inused_object(vse_to_n2d, 5000 /*5s: 极限情况*/, data_item);
+		ret = sync_queue_save_inused_object(vse_to_n2d, 5000 /*5s: 极限情况 */, data_item);
 		if(ret != 0){
 			printf("sync_queue_save_inused_object vse_to_n2d failed\n");
 			break;;
@@ -642,7 +642,7 @@ void *get_data_from_feedback_vse(void *context){
 				channel_status[i] = 1;
 			}
 			performance_test_stop(&performace_test_param_for_send_vse);
-			ret = sync_queue_repay_unused_object(vse_to_n2d, 2000, data_item);
+			ret = sync_queue_repay_unused_object(vse_to_n2d, 5000, data_item);
 			if(ret != 0){
 				printf("sync_queue_repay_unused_object failed\n");
 				break;
@@ -837,10 +837,10 @@ void *get_stitch_data(void *context){
 	//0.5 prepare stitch:src image rect
 	int src_image_start_y = (little_image_height + y_duration) * 2;
 	int src_image_duration_x = multi_pipe_stitch_info->output_width / param_config->sensor_config_count;
-	n2d_rectangle_t stitch_src_image_rect[croped_image_count]; //2或4
+	n2d_rectangle_t stitch_src_image_rect[croped_image_count]; //2 或 4
 	for (int i = 0; i < param_config->sensor_config_count; i++){
 		stitch_src_image_rect[i].x = i * src_image_duration_x;
-		//画布决定： 画布只是 4K的部分 设置为0，如果是整个4k, 应该设置成 src_image_start_y
+		// 画布决定： 画布只是 4K 的部分 设置为 0 ，如果是整个 4k, 应该设置成 src_image_start_y
 		stitch_src_image_rect[i].y = src_image_start_y;
 		stitch_src_image_rect[i].width = src_image_duration_x;
 		stitch_src_image_rect[i].height = little_image_height;
@@ -849,7 +849,7 @@ void *get_stitch_data(void *context){
 	//0.6 prepare Color space conversion
 	int src_image_expend_x = src_image_duration_x * param_config->blend_ratio;
 	n2d_buffer_t dst_rgba8888_n2d;
-	n2d_rectangle_t blend_src_image_rect[croped_image_count]; //2或4
+	n2d_rectangle_t blend_src_image_rect[croped_image_count]; //2 或 4
 	if(param_config->blend_ratio != 0){
 		int src_img_stitch_width = src_image_expend_x;
 		int src_img_stitch_height = little_image_height;
@@ -1037,13 +1037,13 @@ void *get_stitch_data(void *context){
 		multi_pipe_stitch_info->n2d_frame_index = -1;
 		//4. sync queue process
 		performance_test_start(&performace_test_param_save_queue);
-		ret = sync_queue_save_inused_object(n2d_to_output, 2000, n2d_data_item);
+		ret = sync_queue_save_inused_object(n2d_to_output, 5000, n2d_data_item);
 		if(ret != 0){
 			printf("sync_queue_save_inused_object n2d_to_output failed\n");
 			break;
 		}
 
-		ret = sync_queue_repay_unused_object(vse_to_n2d, 2000, data_item);
+		ret = sync_queue_repay_unused_object(vse_to_n2d, 5000, data_item);
 		if(ret != 0){
 			printf("sync_queue_repay_unused_object failed\n");
 			break;
@@ -1395,7 +1395,7 @@ static int stitch_sync_queue_item_data_init_func(void *param, void *item_data){
 		printf("hb_mem_alloc_graph_buf failed :%d\n", ret);
 		return -1;
 	}
-	//初始化为 黑图
+	// 初始化为 黑图
 	memset(item_data_structed->virt_addr[0], 0, item_data_structed->size[0]);
 	memset(item_data_structed->virt_addr[1], 128, item_data_structed->size[1]);
 
@@ -1553,10 +1553,13 @@ int pipeline_start(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 	int min_fps = 100;
 	//2. start pipeline
 	printf("[2] start pipeline.\n");
+	pipeline_info_t pipeline_info[param_config->sensor_config_count];
+	int sensor_type = SENSOR_TYPE_NORMAL;
+
 	for (int i = 0; i < param_config->sensor_config_count; i++){
 		sensor_param_config_t* sensor_param_config = &param_config->sensor_param_config[i];
 		pipe_contex_t *pipe_contex = &multi_pipe_stitch_info->pipe_contex[i];
-
+		pipeline_info[i].pipe_contexts = pipe_contex;
 		//2.1 init pipe_contex
 		pipe_contex->sensor_config = sensor_param_config->sensor_config;
 		pipe_contex->csi_config = sensor_param_config->csi_config;
@@ -1569,6 +1572,7 @@ int pipeline_start(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 			.enable_online = multi_pipe_stitch_info->enable_isp_online,
 			.enable_vse = multi_pipe_stitch_info->pipe_contex_need_vse[i],
 			.sensor_name = sensor_param_config->sensor_config->camera_config->name,
+			.sensor_type = sensor_param_config->sensor_config->sensor_type,
 			.camera_config_info = {
 				.width = multi_pipe_stitch_info->output_width,
 				.height = multi_pipe_stitch_info->output_height,
@@ -1579,7 +1583,7 @@ int pipeline_start(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 			min_fps = sensor_param_config->sensor_config->camera_config->fps;
 		}
 
-		ret = vp_create_and_start_pipeline(pipe_contex, &vp_pipeline_info);
+		ret = vp_create_and_start_pipeline(pipe_contex, &vp_pipeline_info, i);
 		if(ret != 0){
 			printf("vp create and start pipeline for camera [%d] [%s]failed\n",
 				i, sensor_param_config->sensor_config->camera_config->name);
@@ -1610,6 +1614,22 @@ int pipeline_start(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 			sensor_param_config->mjpeg_outfile.data_queue = &multi_pipe_stitch_info->vse_to_n2d;
 			sensor_param_config->mjpeg_outfile.queue_user_flag = sync_queue_add_user(&multi_pipe_stitch_info->vse_to_n2d);
 			pipeline_codec_init(i, "mjpeg", &sensor_param_config->mjpeg_outfile, &camera_config_info);
+		}
+	}
+
+	if (sensor_type != SENSOR_TYPE_NORMAL) {
+		ret = create_serdes_fd_and_attach(pipeline_info, param_config->sensor_config_count);
+		if (ret != 0) {
+			printf("camera_config_init_seq fail for sensor ret = %d\n", ret);
+			return ret;
+		}
+
+		for (int i = 0; i < param_config->sensor_config_count; i++) {
+			ret = vflow_fd_start(pipeline_info[i].pipe_contexts);
+			if (ret != 0) {
+				printf("vflow_fd_start fail for sensor ret = %d\n", ret);
+				return ret;
+			}
 		}
 	}
 
@@ -1694,7 +1714,7 @@ int pipeline_start(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 	}
 #endif
 
-	//设置为实时线程
+	// 设置为实时线程
 	pthread_attr_t attr;
     struct sched_param param;
     pthread_attr_init(&attr);

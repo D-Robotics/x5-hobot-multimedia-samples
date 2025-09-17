@@ -1,9 +1,0 @@
-*.o
-*.so
-*.a
-*.d
-*.patch
-*.vscode
-
-cl/sample_matrix_multiply/matrix_multiply
-gles/sample_bezier/bezier

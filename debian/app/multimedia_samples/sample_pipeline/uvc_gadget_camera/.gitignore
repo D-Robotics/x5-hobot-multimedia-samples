@@ -1,6 +1,0 @@
-*.o
-*.so
-*.d
-*.patch
-*.vscode
-uvc_gadget_camera
